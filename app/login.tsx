@@ -41,27 +41,24 @@ export default function Login() {
           <View style={styles.card}>
             {/* 헤더 */}
             <View style={styles.header}>
-              <View style={styles.lockCircle}>
-                <Ionicons name="lock-closed" size={28} color="#fff" />
-              </View>
-              <Text style={styles.title}>로그인</Text>
-              <Text style={styles.subtitle}>계정에 로그인하세요</Text>
+              <Text style={styles.title}>MOA</Text>
+              <Text style={styles.subtitle}>함께 모아, 망설임 없는 주문</Text>
             </View>
 
             {/* 이메일 */}
             <View style={styles.field}>
-              <Text style={styles.label}>이메일</Text>
+              <Text style={styles.label}>아이디</Text>
               <View style={styles.inputWrap}>
-                <Ionicons
-                  name="mail-outline"
-                  size={18}
-                  color="#9ca3af"
-                  style={styles.leftIcon}
+              <Ionicons
+                name="person-outline"
+                size={18}
+                color="#9ca3af"
+                style={styles.leftIcon}
                 />
                 <TextInput
                   value={email}
                   onChangeText={setEmail}
-                  placeholder="email@example.com"
+                  placeholder="아이디"
                   placeholderTextColor="#9ca3af"
                   keyboardType="email-address"
                   autoCapitalize="none"
@@ -83,7 +80,7 @@ export default function Login() {
                 <TextInput
                   value={password}
                   onChangeText={setPassword}
-                  placeholder="••••••••"
+                  placeholder="비밀번호"
                   placeholderTextColor="#9ca3af"
                   secureTextEntry={!showPassword}
                   autoCapitalize="none"
@@ -113,7 +110,7 @@ export default function Login() {
                 <Checkbox
                   value={rememberMe}
                   onValueChange={setRememberMe}
-                  color={rememberMe ? "#4f46e5" : undefined}
+                  color={rememberMe ? "#f57c00" : undefined}
                   style={styles.checkbox}
                 />
                 <Text style={styles.rememberText}>로그인 상태 유지</Text>
@@ -146,17 +143,6 @@ export default function Login() {
               <View style={styles.dividerLine} />
             </View>
 
-            {/* 소셜 로그인 */}
-            <Pressable
-              onPress={() => Alert.alert("TODO", "Google 로그인 연결")}
-              style={({ pressed }) => [
-                styles.socialBtn,
-                pressed && styles.pressed,
-              ]}
-            >
-              <Ionicons name="logo-google" size={18} color="#111827" />
-              <Text style={styles.socialBtnText}>Google로 계속하기</Text>
-            </Pressable>
 
             {/* 회원가입 */}
             <Text style={styles.bottomText}>
@@ -180,7 +166,7 @@ export default function Login() {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: "#eef2ff",
+    backgroundColor: "white",
   },
   kav: { flex: 1 },
   container: {
@@ -193,14 +179,14 @@ const styles = StyleSheet.create({
   card: {
     width: "100%",
     maxWidth: 420,
-    backgroundColor: "white",
-    borderRadius: 20,
-    padding: 20,
-    shadowColor: "#000",
-    shadowOpacity: 0.12,
-    shadowRadius: 18,
-    shadowOffset: { width: 0, height: 10 },
-    elevation: 6,
+    backgroundColor: "transparent",
+    borderRadius: 0,
+    padding: 0,
+    shadowColor: "transparent",
+    shadowOpacity: 0,
+    shadowRadius: 0,
+    shadowOffset: { width: 0, height: 0 },
+    elevation: 0,
   },
 
   header: { alignItems: "center", marginBottom: 18 },
@@ -213,7 +199,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     marginBottom: 12,
   },
-  title: { fontSize: 22, fontWeight: "700", color: "#111827", marginBottom: 6 },
+  title: { fontSize: 42, fontWeight: "900", color: "#f57c00", marginBottom: 6 },
   subtitle: { fontSize: 14, color: "#6b7280" },
 
   field: { marginTop: 12 },
@@ -254,11 +240,11 @@ const styles = StyleSheet.create({
   checkbox: { width: 18, height: 18 },
   rememberText: { marginLeft: 8, fontSize: 13, color: "#374151" },
 
-  link: { color: "#4f46e5", fontSize: 13, fontWeight: "600" },
+  link: { color: "#f57c00", fontSize: 13, fontWeight: "600" },
 
   primaryBtn: {
     marginTop: 16,
-    backgroundColor: "#4f46e5",
+    backgroundColor: "#f57c00",
     paddingVertical: 14,
     borderRadius: 12,
     alignItems: "center",

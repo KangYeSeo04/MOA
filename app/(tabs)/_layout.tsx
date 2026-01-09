@@ -3,7 +3,13 @@ import { Ionicons } from "@expo/vector-icons";
 
 export default function TabsLayout() {
   return (
-    <Tabs screenOptions={{ headerShown: false }}>
+    <Tabs
+      screenOptions={{
+        headerShown: false,
+        tabBarActiveTintColor: "#f57c00", 
+        tabBarInactiveTintColor: "#9ca3af",
+      }}
+    >
       <Tabs.Screen
         name="index"
         options={{
@@ -34,7 +40,7 @@ export default function TabsLayout() {
         }}
       />
 
-      {/* ✅ 쓰지 않으면 숨기기 (탭바에서 안 보이게) */}
+      {/* 숨길 탭 */}
       <Tabs.Screen
         name="explore"
         options={{ href: null }}
