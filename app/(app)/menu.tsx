@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   View,
   Text,
@@ -9,10 +9,12 @@ import {
   FlatList,
   Image,
   Alert,
+  BackHandler,
+  Platform,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
-import { useCartStore } from "@/stores/cart"; // ✅ alias 안되면 아래 "대체 import" 참고
+import { useCartStore } from "@/stores/cart";
 
 type Category = "all" | "burger" | "side" | "drink";
 
@@ -38,8 +40,8 @@ export default function BurgerMenuScreen() {
   const total = useCartStore((s) => s.totals[restaurantId] ?? 0);
 
   const [selectedCategory, setSelectedCategory] = useState<Category>("all");
-  const [cartCount, setCartCount] = useState(0);
   const [query, setQuery] = useState("");
+  const [quantities, setQuantities] = useState<Record<string, number>>({});
 
   const categories = [
     { id: "all" as const, name: "전체" },
@@ -95,45 +97,79 @@ export default function BurgerMenuScreen() {
     );
   }, [selectedCategory, query]);
 
-  const goBackToMap = () => {
-    if (router.canGoBack()) router.back();
-    else router.replace("/(tabs)");
+  const cartCount = useMemo(() => {
+    return Object.values(quantities).reduce((acc, v) => acc + v, 0);
+  }, [quantities]);
+
+  const goBackToMap = useCallback(() => {
+    router.replace("/(tabs)");
+  }, []);
+
+  useEffect(() => {
+    if (Platform.OS !== "android") return;
+
+    const sub = BackHandler.addEventListener("hardwareBackPress", () => {
+      goBackToMap();
+      return true;
+    });
+
+    return () => sub.remove();
+  }, [goBackToMap]);
+
+  const completeOrderIfNeeded = (nextTotal: number) => {
+    if (nextTotal < MIN_ORDER) return;
+
+    Alert.alert(
+      "주문 접수 완료",
+      `총 ${nextTotal.toLocaleString()}원 담겨서 주문이 접수되었어요!\n(담은 금액은 0원으로 초기화됩니다)`,
+      [
+        {
+          text: "확인",
+          onPress: () => {
+            resetTotal(restaurantId);
+            setQuantities({});
+          },
+        },
+      ]
+    );
   };
 
-  const addToCart = (item: MenuItem) => {
+  const increase = (item: MenuItem) => {
     const nextTotal = total + item.price;
 
-    // ✅ 담은 금액 누적
     addPrice(restaurantId, item.price);
-    setCartCount((c) => c + 1);
+    setQuantities((prev) => ({
+      ...prev,
+      [item.id]: (prev[item.id] ?? 0) + 1,
+    }));
 
-    // ✅ 2만원 이상 순간: 주문 접수 + 0원 초기화 + 지도 복귀
-    if (nextTotal >= MIN_ORDER) {
-      Alert.alert(
-        "주문 접수 완료",
-        `총 ${nextTotal.toLocaleString()}원 담겨서 주문이 접수되었어요!\n(담은 금액은 0원으로 초기화됩니다)`,
-        [
-          {
-            text: "확인",
-            onPress: () => {
-              resetTotal(restaurantId); // ✅ 0원으로 초기화
-              goBackToMap();            // ✅ 지도 복귀 (회색으로 돌아옴)
-            },
-          },
-        ]
-      );
-    }
+    completeOrderIfNeeded(nextTotal);
+  };
+
+  const decrease = (item: MenuItem) => {
+    const currentQty = quantities[item.id] ?? 0;
+    if (currentQty <= 0) return;
+
+    addPrice(restaurantId, -item.price);
+    setQuantities((prev) => {
+      const nextQty = (prev[item.id] ?? 0) - 1;
+      if (nextQty <= 0) {
+        const { [item.id]: _, ...rest } = prev;
+        return rest;
+      }
+      return { ...prev, [item.id]: nextQty };
+    });
   };
 
   return (
     <SafeAreaView style={styles.safe}>
       {/* Header */}
       <View style={styles.header}>
-        <Pressable onPress={goBackToMap} hitSlop={10}>
+        <Pressable onPress={goBackToMap} hitSlop={10} style={styles.backBtn}>
           <Ionicons name="chevron-back" size={24} color="white" />
         </Pressable>
 
-        <View style={{ flex: 1, marginLeft: 8 }}>
+        <View style={styles.headerTitleWrap}>
           <Text style={styles.title}>버거하우스</Text>
           <Text style={styles.subtitle}>
             담은 금액: {total.toLocaleString()}원 / {MIN_ORDER.toLocaleString()}원
@@ -163,60 +199,78 @@ export default function BurgerMenuScreen() {
         <Ionicons name="options-outline" size={18} color="#9CA3AF" />
       </View>
 
-      {/* Category pills */}
-      <FlatList
-        horizontal
-        data={categories}
-        keyExtractor={(c) => c.id}
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.pills}
-        renderItem={({ item }) => {
-          const active = selectedCategory === item.id;
-          return (
-            <Pressable
-              onPress={() => setSelectedCategory(item.id)}
-              style={[
-                styles.pill,
-                active ? styles.pillActive : styles.pillInactive,
-              ]}
-            >
-              <Text
-                style={[
-                  styles.pillText,
-                  active ? styles.pillTextActive : styles.pillTextInactive,
-                ]}
+      {/* Category pills (더 컴팩트하게) */}
+      <View style={styles.categoryWrap}>
+        <FlatList
+          horizontal
+          data={categories}
+          keyExtractor={(c) => c.id}
+          showsHorizontalScrollIndicator={false}
+          style={styles.categoryList}
+          contentContainerStyle={styles.categoryListContent}
+          renderItem={({ item }) => {
+            const active = selectedCategory === item.id;
+            return (
+              <Pressable
+                onPress={() => setSelectedCategory(item.id)}
+                style={[styles.pill, active ? styles.pillActive : styles.pillInactive]}
               >
-                {item.name}
-              </Text>
-            </Pressable>
-          );
-        }}
-      />
+                <Text
+                  style={[
+                    styles.pillText,
+                    active ? styles.pillTextActive : styles.pillTextInactive,
+                  ]}
+                >
+                  {item.name}
+                </Text>
+              </Pressable>
+            );
+          }}
+        />
+      </View>
 
       {/* List */}
       <FlatList
         data={filtered}
         keyExtractor={(m) => m.id}
-        contentContainerStyle={{ padding: 16, gap: 12 }}
-        renderItem={({ item }) => (
-          <View style={styles.card}>
-            <Image source={{ uri: item.image }} style={styles.thumb} />
-            <View style={{ flex: 1, padding: 12, gap: 6 }}>
-              <Text style={styles.itemName}>{item.name}</Text>
-              <Text style={styles.itemDesc} numberOfLines={2}>
-                {item.description}
-              </Text>
-              <View style={styles.row}>
-                <Text style={styles.price}>
-                  {item.price.toLocaleString()}원
+        contentContainerStyle={{ padding: 16, gap: 12, paddingBottom: 24 }}
+        renderItem={({ item }) => {
+          const qty = quantities[item.id] ?? 0;
+
+          return (
+            <View style={styles.card}>
+              <Image source={{ uri: item.image }} style={styles.thumb} />
+              <View style={{ flex: 1, padding: 12, gap: 6 }}>
+                <Text style={styles.itemName}>{item.name}</Text>
+                <Text style={styles.itemDesc} numberOfLines={2}>
+                  {item.description}
                 </Text>
-                <Pressable onPress={() => addToCart(item)} style={styles.addBtn}>
-                  <Text style={styles.addBtnText}>담기</Text>
-                </Pressable>
+
+                <View style={styles.row}>
+                  <Text style={styles.price}>{item.price.toLocaleString()}원</Text>
+
+                  {qty === 0 ? (
+                    <Pressable onPress={() => increase(item)} style={styles.addBtn}>
+                      <Text style={styles.addBtnText}>담기</Text>
+                    </Pressable>
+                  ) : (
+                    <View style={styles.stepper}>
+                      <Pressable onPress={() => decrease(item)} style={styles.stepBtn} hitSlop={8}>
+                        <Text style={styles.stepBtnText}>-</Text>
+                      </Pressable>
+
+                      <Text style={styles.qtyText}>{qty}</Text>
+
+                      <Pressable onPress={() => increase(item)} style={styles.stepBtn} hitSlop={8}>
+                        <Text style={styles.stepBtnText}>+</Text>
+                      </Pressable>
+                    </View>
+                  )}
+                </View>
               </View>
             </View>
-          </View>
-        )}
+          );
+        }}
         ListEmptyComponent={
           <View style={{ padding: 32, alignItems: "center" }}>
             <Text style={{ color: "#6B7280" }}>해당 조건의 메뉴가 없어요</Text>
@@ -227,19 +281,26 @@ export default function BurgerMenuScreen() {
   );
 }
 
+const ORANGE = "#F97316";
+
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: "#F6F7F9" },
 
+  // ✅ 헤더가 "너무 위"로 붙어 보이는 느낌 완화
   header: {
-    backgroundColor: "#F97316",
+    backgroundColor: ORANGE,
     paddingHorizontal: 16,
-    paddingVertical: 14,
+    paddingBottom: 12,
+    paddingTop: Platform.OS === "android" ? 18 : 10, // ✅ 살짝 아래로
     flexDirection: "row",
     alignItems: "center",
-    gap: 8,
+    gap: 10,
   },
-  title: { color: "white", fontSize: 18, fontWeight: "800" },
-  subtitle: { color: "#FFEDD5", fontSize: 12, marginTop: 2 },
+  backBtn: { paddingVertical: 6, paddingRight: 4 },
+  headerTitleWrap: { flex: 1 },
+
+  title: { color: "white", fontSize: 20, fontWeight: "900" },
+  subtitle: { color: "#FFEDD5", fontSize: 12, marginTop: 3 },
 
   cartWrap: { padding: 8 },
   badge: {
@@ -256,9 +317,11 @@ const styles = StyleSheet.create({
   badgeText: { color: "white", fontSize: 11, fontWeight: "800" },
 
   searchRow: {
-    margin: 16,
+    marginHorizontal: 16,
+    marginTop: 14,
+    marginBottom: 10,
     backgroundColor: "white",
-    borderRadius: 12,
+    borderRadius: 14,
     borderWidth: 1,
     borderColor: "#E5E7EB",
     paddingHorizontal: 12,
@@ -269,11 +332,27 @@ const styles = StyleSheet.create({
   },
   searchInput: { flex: 1, fontSize: 14, color: "#111827" },
 
-  pills: { paddingHorizontal: 12, gap: 8, paddingBottom: 8 },
-  pill: { paddingHorizontal: 14, paddingVertical: 10, borderRadius: 999 },
-  pillActive: { backgroundColor: "#F97316" },
+  // ✅ 카테고리 영역을 따로 감싸서 "세로로 길쭉" 느낌 제거
+  categoryWrap: {
+    paddingBottom: 8,
+  },
+  categoryList: { maxHeight: 48 },
+  categoryListContent: {
+    paddingHorizontal: 16,
+    gap: 8,
+  },
+
+  // ✅ pill을 컴팩트하게 (높이 고정)
+  pill: {
+    height: 40,
+    paddingHorizontal: 14,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  pillActive: { backgroundColor: ORANGE },
   pillInactive: { backgroundColor: "#F3F4F6" },
-  pillText: { fontSize: 13, fontWeight: "700" },
+  pillText: { fontSize: 13, fontWeight: "800" },
   pillTextActive: { color: "white" },
   pillTextInactive: { color: "#374151" },
 
@@ -286,15 +365,37 @@ const styles = StyleSheet.create({
     flexDirection: "row",
   },
   thumb: { width: 96, height: 96 },
-  itemName: { fontSize: 15, fontWeight: "800", color: "#111827" },
+  itemName: { fontSize: 15, fontWeight: "900", color: "#111827" },
   itemDesc: { fontSize: 12, color: "#6B7280" },
-  row: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
-  price: { fontSize: 13, fontWeight: "800", color: "#111827" },
+
+  row: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: 4 },
+  price: { fontSize: 13, fontWeight: "900", color: ORANGE },
+
   addBtn: {
-    backgroundColor: "#111827",
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 10,
+    backgroundColor: "#f57c00",
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+    borderRadius: 12,
+    minWidth: 70,
+    alignItems: "center",
   },
-  addBtnText: { color: "white", fontSize: 12, fontWeight: "800" },
+  addBtnText: { color: "white", fontSize: 12, fontWeight: "900" },
+
+  stepper: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#f57c00",
+    borderRadius: 12,
+    overflow: "hidden",
+  },
+  stepBtn: { paddingHorizontal: 12, paddingVertical: 9 },
+  stepBtnText: { color: "white", fontSize: 14, fontWeight: "900" },
+  qtyText: {
+    color: "white",
+    fontSize: 12,
+    fontWeight: "900",
+    paddingHorizontal: 10,
+    minWidth: 22,
+    textAlign: "center",
+  },
 });

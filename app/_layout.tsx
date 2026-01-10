@@ -1,70 +1,22 @@
-import { Tabs } from "expo-router";
-import { Ionicons } from "@expo/vector-icons";
-import React, { useEffect } from "react";
-import { BackHandler, Platform, ToastAndroid } from "react-native";
+// app/_layout.tsx
+// 이 파일은 앱의 최상위 진입점입니다. Stack으로 로그인과 탭을 감쌉니다.
 
-export default function TabsLayout() {
-  // ✅ 탭 어디서든 뒤로가기: 로그인으로 돌아가지 않게 처리
-  useEffect(() => {
-    if (Platform.OS !== "android") return;
+import { Stack } from "expo-router";
 
-    let lastBackPressed = 0;
-
-    const sub = BackHandler.addEventListener("hardwareBackPress", () => {
-      const now = Date.now();
-
-      if (now - lastBackPressed < 2000) {
-        BackHandler.exitApp();
-        return true;
-      }
-
-      lastBackPressed = now;
-      ToastAndroid.show("한 번 더 누르면 종료됩니다", ToastAndroid.SHORT);
-      return true;
-    });
-
-    return () => sub.remove();
-  }, []);
-
+export default function RootLayout() {
   return (
-    <Tabs
-      screenOptions={{
-        headerShown: false,
-        tabBarActiveTintColor: "#f57c00",
-        tabBarInactiveTintColor: "#9ca3af",
-      }}
-    >
-      <Tabs.Screen
-        name="index"
-        options={{
-          title: "홈",
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="home-outline" color={color} size={size} />
-          ),
-        }}
-      />
+    <Stack screenOptions={{ headerShown: false }}>
+      {/* 1. 로그인 관련 화면들 (탭 없음) */}
+      <Stack.Screen name="login" />
+      <Stack.Screen name="signup" />
 
-      <Tabs.Screen
-        name="orders"
-        options={{
-          title: "주문내역",
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="receipt-outline" color={color} size={size} />
-          ),
-        }}
-      />
+      {/* 2. 메인 탭 화면 (로그인 후 이동하는 곳) 
+          여기서 app/(tabs)/_layout.tsx의 설정이 적용됩니다. 
+      */}
+      <Stack.Screen name="(tabs)" />
 
-      <Tabs.Screen
-        name="profile"
-        options={{
-          title: "마이페이지",
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="person-outline" color={color} size={size} />
-          ),
-        }}
-      />
-
-      <Tabs.Screen name="explore" options={{ href: null }} />
-    </Tabs>
+      {/* 기타 화면들 */}
+      <Stack.Screen name="menu" options={{ presentation: 'modal' }} />
+    </Stack>
   );
 }
