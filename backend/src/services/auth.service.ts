@@ -1,45 +1,74 @@
-import * as bcrypt from 'bcrypt';
-import { prisma } from '../db';
+import * as bcrypt from "bcrypt";
+import { sign } from "jsonwebtoken";
+import { prisma } from "../db";
 
-export const signup = async (email: string, password: string, nickname: string) => {
-  if (!email || !password || !nickname) {
-    throw new Error('email, password, nickname are required');
-  }
+export const signup = async (
+    username: string,
+    email: string,
+    phone: string,
+    password: string
+  ) => {
+    const u = username.trim();
+    const e = email.trim().toLowerCase();
+    const p = phone.trim();
+    const pw = password;
+  
+    if (!u || !e || !p || !pw) {
+      throw new Error("username, email, phone, password are required");
+    }
+  
+    const dupUsername = await prisma.user.findUnique({ where: { username: u } });
+    if (dupUsername) throw new Error("Username already exists");
+  
+    const dupEmail = await prisma.user.findUnique({ where: { email: e } });
+    if (dupEmail) throw new Error("Email already exists");
+  
+    const hashed = await bcrypt.hash(pw, 10);
+  
+    const user = await prisma.user.create({
+      data: {
+        username: u,
+        email: e,
+        phone: p,
+        pw: hashed,
+        // nickname은 안 넣어도 됨 (optional)
+      },
+      select: {
+        id: true,
+        username: true,
+        email: true,
+        phone: true,
+        nickname: true,
+        createdAt: true,
+      },
+    });
+  
+    return user;
+  };
 
-  const normalizedEmail = email.trim().toLowerCase();
-  const trimmedNickname = nickname.trim();
+export const login = async (username: string, password: string) => {
+  const u = username.trim();
+  const pw = password;
 
-  if (password.length < 4) {
-    throw new Error('password must be at least 4 characters');
-  }
+  if (!u || !pw) throw new Error("username and password are required");
 
-  // 이메일 중복 체크
-  const existing = await prisma.user.findUnique({
-    where: { email: normalizedEmail },
-    select: { id: true },
+  const user = await prisma.user.findUnique({
+    where: { username: u },
   });
 
-  if (existing) {
-    throw new Error('Email already exists');
-  }
+  if (!user) throw new Error("INVALID_CREDENTIALS");
 
-  // 비밀번호 해시
-  const passwordHash = await bcrypt.hash(password, 10);
+  const ok = await bcrypt.compare(pw, user.pw);
+  if (!ok) throw new Error("INVALID_CREDENTIALS");
 
-  // DB 저장
-  const user = await prisma.user.create({
-    data: {
-      email: normalizedEmail,
-      pw: passwordHash,
-      nickname: trimmedNickname,
-    },
-    select: {
-      id: true,
-      email: true,
-      nickname: true,
-      createdAt: true,
-    },
+  const secret = process.env.JWT_SECRET;
+  if (!secret) throw new Error("JWT_SECRET missing");
+
+  const token = sign({ userId: user.id }, process.env.JWT_SECRET!, {
+    expiresIn: "7d",
   });
-
-  return user;
+  return {
+    token,
+    user: { id: user.id, username: user.username, nickname: user.nickname },
+  };
 };

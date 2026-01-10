@@ -9,9 +9,16 @@ datasource db {
 
 model User {
   id           Int      @id @default(autoincrement())
+
+  username     String   @unique
   email        String   @unique
+  phone        String
+
   pw           String
-  nickname     String
+
+  nickname     String?  // 회원가입에선 안 받으니까 optional
+
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 }
+
