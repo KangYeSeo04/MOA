@@ -32,13 +32,15 @@ export default function ProfileScreen() {
   }
 
   return (
+    
     <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
       {/* 프로필 섹션 */}
       <View style={styles.topCard}>
         <View style={styles.topInner}>
           {/* 프로필 사진 */}
           <View style={styles.avatarWrap}>
-            <Image source={{ uri: profileData.profileImage }} style={styles.avatar} />
+            <Image source={profileData.profileImage} style={styles.avatar} />
+
           </View>
 
           {/* 닉네임 */}
@@ -92,7 +94,7 @@ function MenuRow({
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: "#F9FAFB" },
-  content: { paddingBottom: 24 },
+  content: { paddingTop: 100, paddingBottom: 24 },
 
   topCard: {
     backgroundColor: "#FFFFFF",

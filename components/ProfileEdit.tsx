@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import type { ImageSourcePropType } from "react-native";
 import {
   View,
   Text,
@@ -16,11 +17,11 @@ import { Ionicons } from "@expo/vector-icons";
 interface ProfileEditProps {
   profileData: {
     nickname: string;
-    profileImage: string; // url or local uri
+    profileImage: ImageSourcePropType;
     userId: string;
   };
   onBack: () => void;
-  onSave: (data: { nickname: string; profileImage: string; userId: string }) => void;
+  onSave: (data: { nickname: string; profileImage: ImageSourcePropType; userId: string }) => void;
 }
 
 export default function Profile({ profileData, onBack, onSave }: ProfileEditProps) {
