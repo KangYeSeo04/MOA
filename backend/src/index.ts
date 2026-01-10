@@ -1,9 +1,10 @@
-import * as express from 'express';
-import type { Request, Response } from 'express';
-import * as cors from 'cors';
-import * as dotenv from 'dotenv';
+import * as express from "express";
+import type { Request, Response } from "express";
+import * as cors from "cors";
+import * as dotenv from "dotenv";
 
-import authRoutes from './routes/auth';
+import authRoutes from "./routes/auth";
+import restaurantsRoutes from "./routes/restaurant";
 
 dotenv.config();
 
@@ -12,11 +13,12 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-app.get('/health', (_req: Request, res: Response) => {
+app.get("/health", (_req: Request, res: Response) => {
   res.json({ ok: true });
 });
 
-app.use('/auth', authRoutes);
+app.use("/auth", authRoutes);
+app.use("/restaurants", restaurantsRoutes);
 
 const PORT = Number(process.env.PORT) || 4000;
 
