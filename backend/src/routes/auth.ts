@@ -1,9 +1,8 @@
-import * as express from 'express';
-import { signup } from '../controllers/auth.controller';
+import { Router } from 'express';
+import { signup, login } from '../controllers/auth.controller';
 
-const router = express.Router();
-
-// 회원가입 API 연결
+const router = Router();
 router.post('/signup', signup);
+router.post('/login', login);
 
 export default router;

@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { login } from "./lib/auth";
 import {
   View,
   Text,
@@ -20,13 +21,21 @@ export default function Login() {
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
 
-  const handleSubmit = () => {
-    // TODO: 나중에 실제 로그인 검증 로직 추가
-    console.log("로그인 시도:", { email, password, rememberMe });
-
-    // 로그인 성공했다고 가정 → 홈(탭)으로 이동
-    router.replace("/(tabs)");
+  const handleSubmit = async () => {
+    if (!email.trim() || !password) {
+      Alert.alert("안내", "아이디와 비밀번호를 입력해주세요");
+      return;
+    }
+  
+    try {
+      const data = await login({ username: email.trim(), password });
+      // TODO: rememberMe가 true면 token 저장(AsyncStorage)하면 됨
+      router.replace("/(tabs)");
+    } catch (e: any) {
+      Alert.alert("로그인 실패", e?.message ?? "아이디 또는 비밀번호가 잘못됐습니다.");
+    }
   };
+  
 
   return (
     <View style={styles.screen}>

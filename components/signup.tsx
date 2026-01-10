@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from "react";
+import { signup } from "../app/lib/auth";
 import {
   Alert,
   KeyboardAvoidingView,
@@ -25,6 +26,7 @@ interface SignupPageProps {
 }
 
 export function SignupPage({ onNavigateToLogin }: SignupPageProps) {
+  const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [formData, setFormData] = useState({
@@ -46,7 +48,7 @@ export function SignupPage({ onNavigateToLogin }: SignupPageProps) {
     );
   }, [formData]);
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (!formData.agreeToTerms) {
       Alert.alert("안내", "이용약관에 동의해주세요");
       return;
@@ -55,13 +57,24 @@ export function SignupPage({ onNavigateToLogin }: SignupPageProps) {
       Alert.alert("안내", "비밀번호가 일치하지 않습니다");
       return;
     }
-
-    console.log("Signup attempt:", formData);
-
-    Alert.alert("성공", "회원가입이 완료되었습니다!", [
-      { text: "확인", onPress: onNavigateToLogin },
-    ]);
+  
+    try {
+      await signup({
+        username: formData.username.trim(),
+        email: formData.email.trim(),
+        phone: formData.phone.trim(),
+        password: formData.password,
+      });
+  
+      Alert.alert("성공", "회원가입이 완료되었습니다!", [
+        { text: "확인", onPress: onNavigateToLogin },
+      ]);
+    } catch (e: any) {
+      Alert.alert("회원가입 실패", e?.message ?? "회원가입 실패");
+    }
   };
+  
+  
 
   return (
     <KeyboardAvoidingView
@@ -74,10 +87,6 @@ export function SignupPage({ onNavigateToLogin }: SignupPageProps) {
       >
         {/* Header */}
         <View style={styles.header}>
-          <Pressable onPress={onNavigateToLogin} style={styles.backBtn}>
-            <ArrowLeft size={20} color="#4b5563" />
-            <Text style={styles.backText}>로그인으로 돌아가기</Text>
-          </Pressable>
 
           <View style={styles.brand}>
             <Text style={styles.logo}>MOA</Text>
