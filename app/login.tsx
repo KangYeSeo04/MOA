@@ -45,22 +45,21 @@ export default function Login() {
               <Text style={styles.subtitle}>함께 모아, 망설임 없는 주문</Text>
             </View>
 
-            {/* 이메일 */}
+            {/* 아이디 */}
             <View style={styles.field}>
               <Text style={styles.label}>아이디</Text>
               <View style={styles.inputWrap}>
-              <Ionicons
-                name="person-outline"
-                size={18}
-                color="#9ca3af"
-                style={styles.leftIcon}
+                <Ionicons
+                  name="person-outline"
+                  size={18}
+                  color="#9ca3af"
+                  style={styles.leftIcon}
                 />
                 <TextInput
                   value={email}
                   onChangeText={setEmail}
                   placeholder="아이디"
                   placeholderTextColor="#9ca3af"
-                  keyboardType="email-address"
                   autoCapitalize="none"
                   style={styles.input}
                 />
@@ -143,15 +142,12 @@ export default function Login() {
               <View style={styles.dividerLine} />
             </View>
 
-
             {/* 회원가입 */}
             <Text style={styles.bottomText}>
               계정이 없으신가요?{" "}
               <Text
                 style={styles.link}
-                onPress={() =>
-                  Alert.alert("TODO", "회원가입 화면으로 이동")
-                }
+                onPress={() => router.push("/signup")}
               >
                 회원가입
               </Text>
@@ -190,15 +186,6 @@ const styles = StyleSheet.create({
   },
 
   header: { alignItems: "center", marginBottom: 18 },
-  lockCircle: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    backgroundColor: "#4f46e5",
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 12,
-  },
   title: { fontSize: 42, fontWeight: "900", color: "#f57c00", marginBottom: 6 },
   subtitle: { fontSize: 14, color: "#6b7280" },
 
@@ -259,20 +246,6 @@ const styles = StyleSheet.create({
   },
   dividerLine: { flex: 1, height: 1, backgroundColor: "#d1d5db" },
   dividerText: { color: "#6b7280", fontSize: 12 },
-
-  socialBtn: {
-    marginTop: 14,
-    borderWidth: 1,
-    borderColor: "#d1d5db",
-    borderRadius: 12,
-    paddingVertical: 12,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 10,
-    backgroundColor: "white",
-  },
-  socialBtnText: { color: "#374151", fontSize: 14, fontWeight: "600" },
 
   bottomText: {
     marginTop: 18,
