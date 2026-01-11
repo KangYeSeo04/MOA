@@ -1,10 +1,10 @@
 import { create } from "zustand";
 
 type CartState = {
-  // restaurantId -> total price
+  // restaurantId -> total price (개인 UI용: 내가 담은 금액)
   totals: Record<number, number>;
 
-  // restaurantId -> (menuId -> qty)
+  // restaurantId -> (menuId -> qty) (개인 UI용: 내가 담은 수량)
   itemCounts: Record<number, Record<string, number>>;
 
   addPrice: (restaurantId: number, delta: number) => void;
@@ -13,6 +13,9 @@ type CartState = {
   increaseItem: (restaurantId: number, menuId: string) => void;
   decreaseItem: (restaurantId: number, menuId: string) => void;
   resetItems: (restaurantId: number) => void;
+
+  // ✅ 로그아웃/세션 전환 시 "개인 UI 상태" 전체 초기화용
+  resetAll: () => void;
 };
 
 export const useCartStore = create<CartState>((set) => ({
@@ -70,4 +73,6 @@ export const useCartStore = create<CartState>((set) => ({
     set((state) => ({
       itemCounts: { ...state.itemCounts, [restaurantId]: {} },
     })),
+
+  resetAll: () => set({ totals: {}, itemCounts: {} }),
 }));

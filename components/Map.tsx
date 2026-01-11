@@ -1,14 +1,16 @@
 import React, { useMemo, useRef, useEffect } from "react";
 import { View, Text, StyleSheet } from "react-native";
 import MapView, { Marker, Circle, Callout, Region } from "react-native-maps";
-import { useCartStore } from "@/stores/cart";
 
 export interface Restaurant {
   id: number;
   name: string;
   lat: number;
   lng: number;
+
   minOrderAmount: number;
+  pendingPrice: number; // ✅ DB 공동 장바구니 금액
+
   hasGroupUsers: boolean;
 }
 
@@ -20,15 +22,12 @@ interface RestaurantMapProps {
 
 /**
  * ✅ 추천 줌 레벨
- * - 0.003 ~ 0.008 정도가 "동네 수준"으로 보기 좋음
- * - 지금은 0.006으로 설정 (너무 확대/축소면 이 숫자만 조절)
+ * - 0.004 ~ 0.010 사이에서 취향 조절
  */
 const DEFAULT_DELTA = 0.006;
 
 export function Map({ restaurants, center, onRestaurantPress }: RestaurantMapProps) {
   const mapRef = useRef<MapView>(null);
-
-  // ✅ 첫 진입에만 center/delta를 강제 적용하기 위한 플래그
   const didInitRef = useRef(false);
 
   const initialRegion: Region = useMemo(
@@ -41,7 +40,7 @@ export function Map({ restaurants, center, onRestaurantPress }: RestaurantMapPro
     [center]
   );
 
-  // ✅ 최초 마운트 1회: center + 적당한 줌으로 강제 이동
+  // ✅ 최초 1회만 center로 이동(뒤로 돌아올 때 확대/이동 튐 방지)
   useEffect(() => {
     if (!mapRef.current) return;
     if (didInitRef.current) return;
@@ -54,21 +53,24 @@ export function Map({ restaurants, center, onRestaurantPress }: RestaurantMapPro
         latitudeDelta: DEFAULT_DELTA,
         longitudeDelta: DEFAULT_DELTA,
       },
-      300
+      250
     );
   }, [center]);
 
-  const totals = useCartStore((s) => s.totals);
-
+  /**
+   * 🎨 마커 색상 (DB pendingPrice 기준)
+   * - pendingPrice == 0 → 회색
+   * - pendingPrice / minOrderAmount 비율에 따라 연한 빨강 → 진한 빨강
+   */
   const getMarkerColor = (restaurant: Restaurant) => {
-    const total = totals[restaurant.id] ?? 0;
-    if (total <= 0) return "#9CA3AF";
+    const total = restaurant.pendingPrice ?? 0;
+    if (total <= 0) return "#9CA3AF"; // 회색
 
     const min = Math.max(1, restaurant.minOrderAmount);
-    const progress = Math.min(1, total / min);
+    const progress = Math.min(1, total / min); // 0~1
 
-    const light = { r: 252, g: 165, b: 165 };
-    const dark = { r: 185, g: 28, b: 28 };
+    const light = { r: 252, g: 165, b: 165 }; // 연한 빨강
+    const dark = { r: 185, g: 28, b: 28 }; // 진한 빨강
 
     const r = Math.round(light.r + (dark.r - light.r) * progress);
     const g = Math.round(light.g + (dark.g - light.g) * progress);
@@ -85,10 +87,10 @@ export function Map({ restaurants, center, onRestaurantPress }: RestaurantMapPro
       showsCompass={false}
       showsMyLocationButton={false}
       toolbarEnabled={false}
-      zoomEnabled
-      scrollEnabled
-      rotateEnabled
-      pitchEnabled
+      zoomEnabled={true}
+      scrollEnabled={true}
+      rotateEnabled={true}
+      pitchEnabled={true}
     >
       {/* 기준 위치 표시 */}
       <Circle
@@ -101,7 +103,7 @@ export function Map({ restaurants, center, onRestaurantPress }: RestaurantMapPro
 
       {restaurants.map((restaurant) => {
         const color = getMarkerColor(restaurant);
-        const total = totals[restaurant.id] ?? 0;
+        const total = restaurant.pendingPrice ?? 0;
         const remaining = restaurant.minOrderAmount - total;
 
         return (
@@ -112,14 +114,24 @@ export function Map({ restaurants, center, onRestaurantPress }: RestaurantMapPro
             onPress={() => onRestaurantPress?.(restaurant.id)}
           >
             <View style={[styles.marker, { backgroundColor: color }]} />
+
             <Callout tooltip>
               <View style={styles.callout}>
                 <Text style={styles.title}>{restaurant.name}</Text>
+
                 <Text style={styles.meta}>
                   최소주문금액: {restaurant.minOrderAmount.toLocaleString()}원
                 </Text>
-                <Text style={styles.meta}>담은금액: {total.toLocaleString()}원</Text>
-                <Text style={styles.meta}>남은금액: {remaining.toLocaleString()}원</Text>
+
+                {/* ✅ “공동 장바구니가 지금까지 채워진 금액” */}
+                <Text style={styles.meta}>
+                  누적금액: {total.toLocaleString()}원
+                </Text>
+
+                <Text style={styles.meta}>
+                  남은금액: {remaining.toLocaleString()}원
+                </Text>
+
                 <Text style={[styles.meta, styles.hint]}>(점을 누르면 메뉴로 이동)</Text>
               </View>
             </Callout>
@@ -167,6 +179,5 @@ const styles = StyleSheet.create({
   },
 
   meta: { fontSize: 14, color: "#4B5563", marginTop: 2 },
-
   hint: { marginTop: 8, fontWeight: "700" },
 });
