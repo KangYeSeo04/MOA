@@ -14,9 +14,10 @@ import {
   ActivityIndicator,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { router, useLocalSearchParams, useFocusEffect } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
 import { useCartStore } from "@/stores/cart";
 import { API_BASE } from "../../constants/api";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 type Category = "all" | "burger" | "side" | "drink";
 
@@ -26,15 +27,6 @@ type ApiMenu = {
   name: string;
   price: number;
   amountOrdered: number;
-};
-
-type ApiRestaurant = {
-  id: number;
-  name: string;
-  latitude: number;
-  longitude: number;
-  minOrderPrice: number;
-  pendingPrice: number;
 };
 
 type MenuItem = {
@@ -52,6 +44,7 @@ const FALLBACK_MIN_ORDER = 20000;
 const FALLBACK_IMAGE =
   "https://images.unsplash.com/photo-1568901346375-23c9450c58cd?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&q=80&w=1080";
 
+// ✅ selector에서 쓰는 "안정적인" 빈 객체 (레퍼런스 고정)
 const EMPTY_COUNTS: Record<string, number> = Object.freeze({});
 
 export default function BurgerMenuScreen() {
@@ -63,15 +56,38 @@ export default function BurgerMenuScreen() {
 
   const restaurantId = Number(rid ?? "1");
 
-  // ✅ “내 화면에만 보이는 내 수량” (DB와 분리)
-  const quantities = useCartStore((s) => s.itemCounts[restaurantId] ?? EMPTY_COUNTS);
+  // ✅ 로그인한 유저 식별자 (username/email 등)
+  // - 네 auth 저장 방식에 맞게 키만 맞춰주면 됨
+  const [userKey, setUserKey] = useState<string>("guest");
+
+  useEffect(() => {
+    (async () => {
+      // 예시: auth 저장할 때 userKey를 따로 저장해두는 방식
+      // 네 프로젝트에서 저장 키가 다르면 여기만 바꾸면 됨.
+      const saved = await AsyncStorage.getItem("auth_user_key");
+      if (saved && saved.trim()) setUserKey(saved.trim());
+    })().catch(() => {});
+  }, []);
+
+  // --- store: 공동 금액
+  const addPrice = useCartStore((s) => s.addPrice);
+  const resetTotal = useCartStore((s) => s.resetTotal);
+  const total = useCartStore((s) => s.totals[restaurantId] ?? 0);
+
+  // --- store: 유저별 수량
+  const quantities = useCartStore(
+    (s) => s.itemCountsByUser?.[userKey]?.[restaurantId] ?? EMPTY_COUNTS
+  );
+
   const incItem = useCartStore((s) => s.increaseItem);
   const decItem = useCartStore((s) => s.decreaseItem);
-  const resetItems = useCartStore((s) => s.resetItems);
 
-  // 로컬 totals는 더 이상 “공동 누적금액”으로 쓰지 않음(혼동 방지)
-  const resetTotal = useCartStore((s) => s.resetTotal);
+  // ✅ 주문 접수 시 "모든 유저 수량" 초기화
+  const resetRestaurantItemsForAllUsers = useCartStore(
+    (s) => s.resetRestaurantItemsForAllUsers
+  );
 
+  // --- 화면 상태
   const [selectedCategory, setSelectedCategory] = useState<Category>("all");
   const [query, setQuery] = useState("");
 
@@ -84,9 +100,6 @@ export default function BurgerMenuScreen() {
 
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
   const [loading, setLoading] = useState(true);
-
-  // ✅ 서버 공동 누적금액(= pendingPrice)
-  const [serverPendingPrice, setServerPendingPrice] = useState<number>(0);
 
   // 주문 완료 Alert 중복 방지
   const [orderingLocked, setOrderingLocked] = useState(false);
@@ -101,9 +114,11 @@ export default function BurgerMenuScreen() {
     []
   );
 
+  // ✅ params로 들어온 name/minOrder가 바뀌면 화면에도 반영
   useEffect(() => {
     setRestaurantName(name ?? FALLBACK_RESTAURANT_NAME);
-    setMinOrderAmount(Number(minOrder ?? FALLBACK_MIN_ORDER));
+    const parsed = Number(minOrder ?? FALLBACK_MIN_ORDER);
+    setMinOrderAmount(Number.isFinite(parsed) && parsed > 0 ? parsed : FALLBACK_MIN_ORDER);
   }, [name, minOrder, restaurantId]);
 
   // ✅ 메뉴 서버에서 가져오기
@@ -113,9 +128,13 @@ export default function BurgerMenuScreen() {
     (async () => {
       setLoading(true);
       const url = `${API_BASE}/restaurants/${restaurantId}/menus`;
+      console.log("FETCH MENU =", url);
 
       const res = await fetch(url);
-      if (!res.ok) throw new Error(`GET /restaurants/${restaurantId}/menus failed: ${res.status}`);
+      if (!res.ok) {
+        const text = await res.text().catch(() => "");
+        throw new Error(`GET /restaurants/${restaurantId}/menus failed: ${res.status} ${text}`);
+      }
 
       const data: ApiMenu[] = await res.json();
 
@@ -139,38 +158,6 @@ export default function BurgerMenuScreen() {
       cancelled = true;
     };
   }, [restaurantId]);
-
-  // ✅ (핵심) 서버 pendingPrice 폴링: A가 담으면 B도 즉시 보임
-  const fetchRestaurantPending = useCallback(async () => {
-    const res = await fetch(`${API_BASE}/restaurants/${restaurantId}`);
-    if (!res.ok) return;
-
-    const r: ApiRestaurant = await res.json();
-    setServerPendingPrice(r.pendingPrice ?? 0);
-
-    // minOrder/name도 서버 기준으로 맞추고 싶으면 여기서 세팅 가능
-    // setRestaurantName(r.name);
-    // setMinOrderAmount(r.minOrderPrice);
-  }, [restaurantId]);
-
-  useFocusEffect(
-    useCallback(() => {
-      let cancelled = false;
-      let timer: any = null;
-
-      fetchRestaurantPending().catch(() => {});
-
-      timer = setInterval(() => {
-        if (cancelled) return;
-        fetchRestaurantPending().catch(() => {});
-      }, 2000);
-
-      return () => {
-        cancelled = true;
-        if (timer) clearInterval(timer);
-      };
-    }, [fetchRestaurantPending])
-  );
 
   const filtered = useMemo(() => {
     const byCategory =
@@ -205,119 +192,50 @@ export default function BurgerMenuScreen() {
     return () => sub.remove();
   }, [goBackToMap]);
 
-  /**
-   * ✅ DB 반영: 메뉴 수량 +/- → 서버에 PATCH 날리고,
-   * 응답으로 온 restaurant.pendingPrice를 화면에 반영
-   */
-  const patchMenuDelta = useCallback(
-    async (menuId: string, delta: 1 | -1) => {
-      const url = `${API_BASE}/restaurants/${restaurantId}/menus/${Number(menuId)}/amount`;
-      const res = await fetch(url, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ delta }),
-      });
+  const completeOrderIfNeeded = (nextTotal: number) => {
+    if (orderingLocked) return;
+    if (nextTotal < minOrderAmount) return;
 
-      if (!res.ok) {
-        const text = await res.text().catch(() => "");
-        throw new Error(`PATCH failed ${res.status} ${text}`);
-      }
+    setOrderingLocked(true);
 
-      const json = await res.json();
-      // json.restaurant.pendingPrice 를 신뢰
-      if (json?.restaurant?.pendingPrice != null) {
-        setServerPendingPrice(json.restaurant.pendingPrice);
-      }
-      return json;
-    },
-    [restaurantId]
-  );
+    Alert.alert(
+      "주문 접수 완료",
+      `총 ${nextTotal.toLocaleString()}원 담겨서 주문이 접수되었어요!\n(공동 장바구니가 초기화됩니다)`,
+      [
+        {
+          text: "확인",
+          onPress: () => {
+            // ✅ 공동 금액 초기화
+            resetTotal(restaurantId);
+            // ✅ 해당 매장의 "모든 유저" 수량 초기화 (A/B 모두 비워짐)
+            resetRestaurantItemsForAllUsers(restaurantId);
 
-  /**
-   * ✅ 주문 접수(초기화) = DB에 checkout 호출
-   */
-  const checkout = useCallback(async () => {
-    const url = `${API_BASE}/restaurants/${restaurantId}/checkout`;
-    const res = await fetch(url, { method: "POST" });
-
-    if (!res.ok) {
-      const text = await res.text().catch(() => "");
-      throw new Error(`checkout failed ${res.status} ${text}`);
-    }
-
-    const json = await res.json();
-    setServerPendingPrice(0);
-
-    // 내 로컬 “표시용 수량”도 초기화 (UX)
-    resetItems(restaurantId);
-    resetTotal(restaurantId);
-
-    return json;
-  }, [restaurantId, resetItems, resetTotal]);
-
-  const completeOrderIfNeeded = useCallback(
-    (nextPending: number) => {
-      if (orderingLocked) return;
-      if (nextPending < minOrderAmount) return;
-
-      setOrderingLocked(true);
-
-      Alert.alert(
-        "주문 접수 완료",
-        `총 ${nextPending.toLocaleString()}원 채워져서 주문이 접수되었어요!\n(공동 장바구니는 0원으로 초기화됩니다)`,
-        [
-          {
-            text: "확인",
-            onPress: async () => {
-              try {
-                await checkout();
-              } catch (e: any) {
-                Alert.alert("초기화 실패", e?.message ?? "checkout 실패");
-              } finally {
-                setOrderingLocked(false);
-              }
-            },
+            setOrderingLocked(false);
           },
-        ],
-        { cancelable: false }
-      );
-    },
-    [orderingLocked, minOrderAmount, checkout]
-  );
-
-  const increase = async (item: MenuItem) => {
-    // 1) 내 로컬 수량 UI는 즉시 증가(낙관적)
-    incItem(restaurantId, item.id);
-
-    try {
-      // 2) DB 업데이트
-      const json = await patchMenuDelta(item.id, 1);
-
-      // 3) 응답으로 받은 pendingPrice 기준으로 주문 접수 판단
-      const nextPending = json?.restaurant?.pendingPrice ?? serverPendingPrice;
-      completeOrderIfNeeded(nextPending);
-    } catch (e: any) {
-      // 실패하면 롤백
-      decItem(restaurantId, item.id);
-      Alert.alert("오류", e?.message ?? "메뉴 추가 실패");
-    }
+        },
+      ],
+      { cancelable: false }
+    );
   };
 
-  const decrease = async (item: MenuItem) => {
+  const increase = (item: MenuItem) => {
+    const nextTotal = total + item.price;
+    addPrice(restaurantId, item.price);
+
+    // ✅ 유저별 수량 증가
+    incItem(userKey, restaurantId, item.id);
+
+    completeOrderIfNeeded(nextTotal);
+  };
+
+  const decrease = (item: MenuItem) => {
     const qty = quantities[item.id] ?? 0;
     if (qty <= 0) return;
 
-    // 1) 로컬 UI 먼저 감소
-    decItem(restaurantId, item.id);
+    addPrice(restaurantId, -item.price);
 
-    try {
-      // 2) DB 업데이트
-      await patchMenuDelta(item.id, -1);
-    } catch (e: any) {
-      // 실패하면 롤백
-      incItem(restaurantId, item.id);
-      Alert.alert("오류", e?.message ?? "메뉴 감소 실패");
-    }
+    // ✅ 유저별 수량 감소
+    decItem(userKey, restaurantId, item.id);
   };
 
   return (
@@ -330,10 +248,8 @@ export default function BurgerMenuScreen() {
 
         <View style={styles.headerTitleWrap}>
           <Text style={styles.title}>{restaurantName}</Text>
-
-          {/* ✅ “공동 누적 금액”을 서버 pendingPrice로 표시 */}
           <Text style={styles.subtitle}>
-            누적 금액: {serverPendingPrice.toLocaleString()}원 / {minOrderAmount.toLocaleString()}원
+            담은 금액: {total.toLocaleString()}원 / {minOrderAmount.toLocaleString()}원
           </Text>
         </View>
 
