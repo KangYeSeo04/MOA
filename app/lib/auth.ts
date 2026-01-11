@@ -71,4 +71,46 @@ export async function login(input: LoginInput) {
   return res.json().catch(() => null);
 }
 
+export async function updateMe(input: { nickname?: string; currentPassword?: string; newPassword?: string }) {
+  const token = await getToken();
+  if (!token) throw new Error("토큰이 없습니다. 다시 로그인해주세요.");
 
+  const res = await fetch(`${API_BASE}/user/me`, {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(input),
+  });
+
+  if (!res.ok) {
+    const msg = await parseError(res);
+    throw new Error(msg);
+  }
+  return res.json().catch(() => null);
+}
+
+export async function changePassword(input: { currentPassword: string; newPassword: string }) {
+  const token = await getToken();
+  if (!token) throw new Error("토큰이 없습니다. 다시 로그인해주세요.");
+
+  const res = await fetch(`${API_BASE}/user/password`, {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({
+      currentPassword: input.currentPassword,
+      newPassword: input.newPassword,
+    }),
+  });
+
+  if (!res.ok) {
+    const msg = await parseError(res);
+    throw new Error(msg);
+  }
+
+  return res.json().catch(() => null); // { ok: true }
+}

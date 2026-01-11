@@ -105,6 +105,8 @@ export default function ProfileScreen() {
         </View>
       </View>
 
+      <View style={styles.softDivider} />
+
       {/* 오렌지 섹션: 쿠폰함/찜/나의 리뷰 */}
       <View style={styles.orangeWrap}>
         <View style={styles.orangeCard}>
@@ -291,4 +293,12 @@ const styles = StyleSheet.create({
   menuTitle: { fontSize: 15, fontWeight: "600", color: "#1F2937" },
 
   pressed: { opacity: 0.85 },
+
+  softDivider: {
+    height: 1,
+    backgroundColor: "#D1D5DB", // 입력창 테두리/placeholder랑 같은 톤
+    marginVertical: 18,         // 위아래 여백 (조절 가능)
+    borderRadius: 1,
+  },
+  
 });
