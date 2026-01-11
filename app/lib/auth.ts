@@ -1,4 +1,10 @@
 import { API_BASE } from "../../constants/api";
+import * as SecureStore from "expo-secure-store";
+const KEY = "moa_token";
+
+export const setToken = (t: string) => SecureStore.setItemAsync(KEY, t);
+export const getToken = () => SecureStore.getItemAsync(KEY);
+export const clearToken = () => SecureStore.deleteItemAsync(KEY);
 
 type SignupInput = {
   username: string;
@@ -64,3 +70,5 @@ export async function login(input: LoginInput) {
 
   return res.json().catch(() => null);
 }
+
+

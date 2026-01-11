@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { login } from "./lib/auth";
+import { login, setToken } from "./lib/auth"; // ✅ setToken 추가
 import {
   View,
   Text,
@@ -16,7 +16,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 
 export default function Login() {
-  const [identifier, setIdentifier] = useState(""); // ✅ email -> identifier
+  const [identifier, setIdentifier] = useState(""); // username 또는 email
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
@@ -29,7 +29,25 @@ export default function Login() {
 
     try {
       const data = await login({ identifier: identifier.trim(), password });
-      // TODO: rememberMe가 true면 token 저장(AsyncStorage/SecureStore)하면 됨
+
+      // ✅ 로그인 성공 시 token 저장 (마이페이지 /me 호출에 필요)
+      const token = data?.token;
+      if (typeof token === "string" && token.length > 0) {
+        await setToken(token);
+      } else {
+        // 서버가 token을 안 내려주면 마이페이지 연동이 불가능해서 바로 알려주는 게 좋아
+        console.warn("Login succeeded but no token in response:", data);
+        Alert.alert(
+          "로그인 응답 오류",
+          "서버에서 토큰(token)을 반환하지 않았어요. 백엔드 로그인 응답에 token을 추가해야 합니다."
+        );
+        return;
+      }
+
+      // (선택) rememberMe는 지금 단계에선 UI만 유지해도 OK
+      // 나중에: rememberMe가 false면 앱 종료/로그아웃 시 clearToken 하거나,
+      // 서버 JWT expiresIn을 rememberMe에 따라 다르게 주는 방식 추천
+
       router.replace("/(tabs)");
     } catch (e: any) {
       Alert.alert("로그인 실패", e?.message ?? "아이디 또는 비밀번호가 잘못됐습니다.");
@@ -42,7 +60,10 @@ export default function Login() {
         style={styles.kav}
         behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
-        <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
+        <ScrollView
+          contentContainerStyle={styles.container}
+          keyboardShouldPersistTaps="handled"
+        >
           <View style={styles.card}>
             {/* 헤더 */}
             <View style={styles.header}>
@@ -104,7 +125,7 @@ export default function Login() {
               </View>
             </View>
 
-            {/* 기억하기 & 비밀번호 찾기 */}
+            {/* 로그인 상태 유지 & 비밀번호 찾기 */}
             <View style={styles.rowBetween}>
               <Pressable
                 onPress={() => setRememberMe((v) => !v)}
@@ -126,7 +147,10 @@ export default function Login() {
             </View>
 
             {/* 로그인 버튼 */}
-            <Pressable onPress={handleSubmit} style={({ pressed }) => [styles.primaryBtn, pressed && styles.pressed]}>
+            <Pressable
+              onPress={handleSubmit}
+              style={({ pressed }) => [styles.primaryBtn, pressed && styles.pressed]}
+            >
               <Text style={styles.primaryBtnText}>로그인</Text>
             </Pressable>
 

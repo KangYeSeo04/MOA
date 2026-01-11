@@ -68,14 +68,10 @@ export default function Profile({ profileData, onBack, onSave }: ProfileEditProp
           {/* Profile Image */}
           <View style={styles.profileSection}>
             <View style={styles.avatarWrap}>
-              <Image
-                source={
-                  profileImage
-                    ? { uri: profileImage }
-                    : require("../assets/images/profile.png")
-                }
-                style={styles.avatar}
-              />
+            <Image
+              source={profileImage ?? require("../assets/images/profile.png")}
+              style={styles.avatar}
+            />
               <Pressable
                 onPress={handleImageChange}
                 style={({ pressed }) => [styles.cameraBtn, pressed && styles.pressed]}
