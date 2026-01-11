@@ -16,26 +16,25 @@ import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 
 export default function Login() {
-  const [email, setEmail] = useState("");
+  const [identifier, setIdentifier] = useState(""); // ✅ email -> identifier
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
 
   const handleSubmit = async () => {
-    if (!email.trim() || !password) {
-      Alert.alert("안내", "아이디와 비밀번호를 입력해주세요");
+    if (!identifier.trim() || !password) {
+      Alert.alert("안내", "아이디(또는 이메일)와 비밀번호를 입력해주세요");
       return;
     }
-  
+
     try {
-      const data = await login({ username: email.trim(), password });
-      // TODO: rememberMe가 true면 token 저장(AsyncStorage)하면 됨
+      const data = await login({ identifier: identifier.trim(), password });
+      // TODO: rememberMe가 true면 token 저장(AsyncStorage/SecureStore)하면 됨
       router.replace("/(tabs)");
     } catch (e: any) {
       Alert.alert("로그인 실패", e?.message ?? "아이디 또는 비밀번호가 잘못됐습니다.");
     }
   };
-  
 
   return (
     <View style={styles.screen}>
@@ -43,10 +42,7 @@ export default function Login() {
         style={styles.kav}
         behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
-        <ScrollView
-          contentContainerStyle={styles.container}
-          keyboardShouldPersistTaps="handled"
-        >
+        <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
           <View style={styles.card}>
             {/* 헤더 */}
             <View style={styles.header}>
@@ -54,9 +50,9 @@ export default function Login() {
               <Text style={styles.subtitle}>함께 모아, 망설임 없는 주문</Text>
             </View>
 
-            {/* 아이디 */}
+            {/* 아이디/이메일 */}
             <View style={styles.field}>
-              <Text style={styles.label}>아이디</Text>
+              <Text style={styles.label}>아이디 / 이메일</Text>
               <View style={styles.inputWrap}>
                 <Ionicons
                   name="person-outline"
@@ -65,9 +61,9 @@ export default function Login() {
                   style={styles.leftIcon}
                 />
                 <TextInput
-                  value={email}
-                  onChangeText={setEmail}
-                  placeholder="아이디"
+                  value={identifier}
+                  onChangeText={setIdentifier}
+                  placeholder="아이디 또는 이메일"
                   placeholderTextColor="#9ca3af"
                   autoCapitalize="none"
                   style={styles.input}
@@ -124,23 +120,13 @@ export default function Login() {
                 <Text style={styles.rememberText}>로그인 상태 유지</Text>
               </Pressable>
 
-              <Pressable
-                onPress={() =>
-                  Alert.alert("TODO", "비밀번호 찾기 화면으로 이동")
-                }
-              >
+              <Pressable onPress={() => Alert.alert("TODO", "비밀번호 찾기 화면으로 이동")}>
                 <Text style={styles.link}>비밀번호 찾기</Text>
               </Pressable>
             </View>
 
             {/* 로그인 버튼 */}
-            <Pressable
-              onPress={handleSubmit}
-              style={({ pressed }) => [
-                styles.primaryBtn,
-                pressed && styles.pressed,
-              ]}
-            >
+            <Pressable onPress={handleSubmit} style={({ pressed }) => [styles.primaryBtn, pressed && styles.pressed]}>
               <Text style={styles.primaryBtnText}>로그인</Text>
             </Pressable>
 
@@ -154,10 +140,7 @@ export default function Login() {
             {/* 회원가입 */}
             <Text style={styles.bottomText}>
               계정이 없으신가요?{" "}
-              <Text
-                style={styles.link}
-                onPress={() => router.push("/signup")}
-              >
+              <Text style={styles.link} onPress={() => router.push("/signup")}>
                 회원가입
               </Text>
             </Text>
@@ -169,10 +152,7 @@ export default function Login() {
 }
 
 const styles = StyleSheet.create({
-  screen: {
-    flex: 1,
-    backgroundColor: "white",
-  },
+  screen: { flex: 1, backgroundColor: "white" },
   kav: { flex: 1 },
   container: {
     flexGrow: 1,
@@ -193,7 +173,6 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 0 },
     elevation: 0,
   },
-
   header: { alignItems: "center", marginBottom: 18 },
   title: { fontSize: 42, fontWeight: "900", color: "#f57c00", marginBottom: 6 },
   subtitle: { fontSize: 14, color: "#6b7280" },
@@ -217,14 +196,8 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: "#111827",
   },
-  inputWithRightButton: {
-    paddingRight: 44,
-  },
-  rightIconButton: {
-    position: "absolute",
-    right: 12,
-    padding: 4,
-  },
+  inputWithRightButton: { paddingRight: 44 },
+  rightIconButton: { position: "absolute", right: 12, padding: 4 },
 
   rowBetween: {
     marginTop: 14,
@@ -247,21 +220,11 @@ const styles = StyleSheet.create({
   },
   primaryBtnText: { color: "white", fontSize: 16, fontWeight: "700" },
 
-  divider: {
-    marginTop: 18,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-  },
+  divider: { marginTop: 18, flexDirection: "row", alignItems: "center", gap: 10 },
   dividerLine: { flex: 1, height: 1, backgroundColor: "#d1d5db" },
   dividerText: { color: "#6b7280", fontSize: 12 },
 
-  bottomText: {
-    marginTop: 18,
-    textAlign: "center",
-    color: "#6b7280",
-    fontSize: 13,
-  },
+  bottomText: { marginTop: 18, textAlign: "center", color: "#6b7280", fontSize: 13 },
 
   pressed: { opacity: 0.85 },
 });

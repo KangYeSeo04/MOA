@@ -1,33 +1,66 @@
-// app/lib/auth.ts
-import { API_BASE_URL } from "./api";
+import { API_BASE } from "../../constants/api";
 
-type SignupParams = {
+type SignupInput = {
   username: string;
   email: string;
   phone: string;
   password: string;
 };
 
-export async function signup(params: SignupParams) {
-  const res = await fetch(`${API_BASE_URL}/auth/signup`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(params),
-  });
+type LoginInput = {
+  identifier: string; // ✅ username 또는 email
+  password: string;
+};
 
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data?.message ?? "회원가입 실패");
-  return data;
+async function parseError(res: Response) {
+  const text = await res.text().catch(() => "");
+  try {
+    const json = JSON.parse(text);
+    return json?.message || json?.error || text || `HTTP ${res.status}`;
+  } catch {
+    return text || `HTTP ${res.status}`;
+  }
 }
 
-export async function login(params: { username: string; password: string }) {
-  const res = await fetch(`${API_BASE_URL}/auth/login`, {
+export async function signup(input: SignupInput) {
+  const res = await fetch(`${API_BASE}/auth/signup`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(params),
+    body: JSON.stringify({
+      username: input.username,
+      email: input.email,
+      phone: input.phone,
+      password: input.password,
+    }),
   });
 
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data?.message ?? "로그인 실패");
-  return data;
+  if (!res.ok) {
+    const msg = await parseError(res);
+    throw new Error(msg);
+  }
+
+  return res.json().catch(() => null);
+}
+
+export async function login(input: LoginInput) {
+  const id = (input.identifier ?? "").trim();
+
+  const res = await fetch(`${API_BASE}/auth/login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    // ✅ 백엔드가 뭘 받든 되도록 다 보내기
+    body: JSON.stringify({
+      identifier: id,
+      username: id,
+      email: id,
+      password: input.password,
+    }),
+  });
+
+  if (!res.ok) {
+    const msg = await parseError(res);
+    throw new Error(msg);
+  }
+
+  return res.json().catch(() => null);
 }
