@@ -2,26 +2,23 @@ import { Router } from "express";
 import {
   getMenusByRestaurant,
   getRestaurants,
-  getRestaurantById,
-  patchMenuAmountOrdered,
-  checkoutRestaurant,
+  getRestaurantState,
+  patchPendingPrice,
+  completeOrder,
 } from "../controllers/restaurant.controller";
 
 const router = Router();
 
-// GET /restaurants
-router.get("/", getRestaurants);
+router.get("/", getRestaurants);                 // GET /restaurants
+router.get("/:id/menus", getMenusByRestaurant);  // GET /restaurants/:id/menus
 
-// ✅ GET /restaurants/:id  (pendingPrice/minOrderPrice 확인용)
-router.get("/:id", getRestaurantById);
+// ✅ 공동 장바구니(금액) 상태 조회
+router.get("/:id/state", getRestaurantState);    // GET /restaurants/:id/state
 
-// GET /restaurants/:id/menus
-router.get("/:id/menus", getMenusByRestaurant);
+// ✅ 공동 장바구니(금액) 증감
+router.patch("/:id/pendingPrice", patchPendingPrice); // PATCH /restaurants/:id/pendingPrice { delta }
 
-// PATCH /restaurants/:rid/menus/:mid/amount  body: { delta: 1 | -1 }
-router.patch("/:rid/menus/:mid/amount", patchMenuAmountOrdered);
-
-// ✅ POST /restaurants/:rid/checkout  (주문 접수 → DB 초기화)
-router.post("/:rid/checkout", checkoutRestaurant);
+// ✅ 주문 접수(공동 금액 0으로 리셋)
+router.post("/:id/complete", completeOrder);     // POST /restaurants/:id/complete
 
 export default router;

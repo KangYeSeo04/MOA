@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   View,
   Text,
@@ -29,6 +29,12 @@ type ApiMenu = {
   amountOrdered: number;
 };
 
+type RestaurantState = {
+  id: number;
+  pendingPrice: number;
+  minOrderPrice: number;
+};
+
 type MenuItem = {
   id: string;
   name: string;
@@ -44,8 +50,10 @@ const FALLBACK_MIN_ORDER = 20000;
 const FALLBACK_IMAGE =
   "https://images.unsplash.com/photo-1568901346375-23c9450c58cd?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&q=80&w=1080";
 
-// ✅ selector에서 쓰는 "안정적인" 빈 객체 (레퍼런스 고정)
 const EMPTY_COUNTS: Record<string, number> = Object.freeze({});
+
+// polling interval (ms)
+const POLL_MS = 1200;
 
 export default function BurgerMenuScreen() {
   const { rid, name, minOrder } = useLocalSearchParams<{
@@ -56,36 +64,28 @@ export default function BurgerMenuScreen() {
 
   const restaurantId = Number(rid ?? "1");
 
-  // ✅ 로그인한 유저 식별자 (username/email 등)
-  // - 네 auth 저장 방식에 맞게 키만 맞춰주면 됨
+  // ✅ 로그인 유저 key
   const [userKey, setUserKey] = useState<string>("guest");
-
   useEffect(() => {
     (async () => {
-      // 예시: auth 저장할 때 userKey를 따로 저장해두는 방식
-      // 네 프로젝트에서 저장 키가 다르면 여기만 바꾸면 됨.
       const saved = await AsyncStorage.getItem("auth_user_key");
       if (saved && saved.trim()) setUserKey(saved.trim());
     })().catch(() => {});
   }, []);
 
-  // --- store: 공동 금액
-  const addPrice = useCartStore((s) => s.addPrice);
-  const resetTotal = useCartStore((s) => s.resetTotal);
+  // --- store: 공동 금액 (서버 pendingPrice 반영)
   const total = useCartStore((s) => s.totals[restaurantId] ?? 0);
+  const setTotal = useCartStore((s) => s.setTotal);
 
   // --- store: 유저별 수량
   const quantities = useCartStore(
     (s) => s.itemCountsByUser?.[userKey]?.[restaurantId] ?? EMPTY_COUNTS
   );
-
   const incItem = useCartStore((s) => s.increaseItem);
   const decItem = useCartStore((s) => s.decreaseItem);
 
-  // ✅ 주문 접수 시 "모든 유저 수량" 초기화
-  const resetRestaurantItemsForAllUsers = useCartStore(
-    (s) => s.resetRestaurantItemsForAllUsers
-  );
+  // 주문 접수 시 모든 유저 수량 초기화(로컬 잔상 제거)
+  const resetRestaurantItemsForAllUsers = useCartStore((s) => s.resetRestaurantItemsForAllUsers);
 
   // --- 화면 상태
   const [selectedCategory, setSelectedCategory] = useState<Category>("all");
@@ -103,6 +103,10 @@ export default function BurgerMenuScreen() {
 
   // 주문 완료 Alert 중복 방지
   const [orderingLocked, setOrderingLocked] = useState(false);
+  const orderingLockedRef = useRef(false);
+  useEffect(() => {
+    orderingLockedRef.current = orderingLocked;
+  }, [orderingLocked]);
 
   const categories = useMemo(
     () => [
@@ -114,9 +118,10 @@ export default function BurgerMenuScreen() {
     []
   );
 
-  // ✅ params로 들어온 name/minOrder가 바뀌면 화면에도 반영
+  // ✅ params 반영
   useEffect(() => {
     setRestaurantName(name ?? FALLBACK_RESTAURANT_NAME);
+
     const parsed = Number(minOrder ?? FALLBACK_MIN_ORDER);
     setMinOrderAmount(Number.isFinite(parsed) && parsed > 0 ? parsed : FALLBACK_MIN_ORDER);
   }, [name, minOrder, restaurantId]);
@@ -159,6 +164,50 @@ export default function BurgerMenuScreen() {
     };
   }, [restaurantId]);
 
+  // ✅ 공동 pendingPrice polling → totals 동기화
+  useEffect(() => {
+    let dead = false;
+    let timer: any = null;
+
+    const tick = async () => {
+      try {
+        const url = `${API_BASE}/restaurants/${restaurantId}/state`;
+        const res = await fetch(url);
+        if (!res.ok) return;
+
+        const st = (await res.json()) as RestaurantState;
+
+        if (dead) return;
+
+        // 서버값을 store에 반영 (다른 기기 변경이 여기서 들어옴)
+        if (typeof st?.pendingPrice === "number") setTotal(restaurantId, st.pendingPrice);
+
+        // 서버 minOrderPrice를 쓰고 싶으면 동기화(우선순위: 서버)
+        if (typeof st?.minOrderPrice === "number" && st.minOrderPrice > 0) {
+          setMinOrderAmount(st.minOrderPrice);
+        }
+
+        // 서버에서 0으로 리셋된 게 감지되면,
+        // 로컬의 모든 유저 qty도 비워서 “A가 돌아왔는데 2개 남음” 같은 잔상 제거
+        if (st?.pendingPrice === 0) {
+          resetRestaurantItemsForAllUsers(restaurantId);
+          setOrderingLocked(false);
+        }
+      } catch (e) {
+        // 네트워크 에러는 조용히 재시도
+      } finally {
+        if (!dead) timer = setTimeout(tick, POLL_MS);
+      }
+    };
+
+    tick();
+
+    return () => {
+      dead = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, [restaurantId, setTotal, resetRestaurantItemsForAllUsers]);
+
   const filtered = useMemo(() => {
     const byCategory =
       selectedCategory === "all"
@@ -192,10 +241,47 @@ export default function BurgerMenuScreen() {
     return () => sub.remove();
   }, [goBackToMap]);
 
+  const postDeltaToServer = async (delta: number) => {
+    const res = await fetch(`${API_BASE}/restaurants/${restaurantId}/pendingPrice`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ delta }),
+    });
+
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      throw new Error(`pendingPrice update failed: ${res.status} ${text}`);
+    }
+
+    const st = (await res.json().catch(() => null)) as RestaurantState | null;
+    if (st && typeof st.pendingPrice === "number") setTotal(restaurantId, st.pendingPrice);
+    if (st && typeof st.minOrderPrice === "number" && st.minOrderPrice > 0) {
+      setMinOrderAmount(st.minOrderPrice);
+    }
+    return st;
+  };
+
+  const completeOrderOnServer = async () => {
+    const res = await fetch(`${API_BASE}/restaurants/${restaurantId}/complete`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+    });
+
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      throw new Error(`complete failed: ${res.status} ${text}`);
+    }
+
+    const st = (await res.json().catch(() => null)) as RestaurantState | null;
+    if (st && typeof st.pendingPrice === "number") setTotal(restaurantId, st.pendingPrice);
+    return st;
+  };
+
   const completeOrderIfNeeded = (nextTotal: number) => {
-    if (orderingLocked) return;
+    if (orderingLockedRef.current) return;
     if (nextTotal < minOrderAmount) return;
 
+    orderingLockedRef.current = true;
     setOrderingLocked(true);
 
     Alert.alert(
@@ -204,13 +290,18 @@ export default function BurgerMenuScreen() {
       [
         {
           text: "확인",
-          onPress: () => {
-            // ✅ 공동 금액 초기화
-            resetTotal(restaurantId);
-            // ✅ 해당 매장의 "모든 유저" 수량 초기화 (A/B 모두 비워짐)
-            resetRestaurantItemsForAllUsers(restaurantId);
-
-            setOrderingLocked(false);
+          onPress: async () => {
+            try {
+              // ✅ 서버에서 공동 pendingPrice를 0으로 리셋
+              await completeOrderOnServer();
+            } catch (e: any) {
+              Alert.alert("오류", e?.message ?? "주문 접수 처리 실패");
+            } finally {
+              // ✅ 로컬 잔상 제거(모든 유저 qty 비우기)
+              resetRestaurantItemsForAllUsers(restaurantId);
+              setOrderingLocked(false);
+              orderingLockedRef.current = false;
+            }
           },
         },
       ],
@@ -218,24 +309,37 @@ export default function BurgerMenuScreen() {
     );
   };
 
-  const increase = (item: MenuItem) => {
-    const nextTotal = total + item.price;
-    addPrice(restaurantId, item.price);
-
-    // ✅ 유저별 수량 증가
+  const increase = async (item: MenuItem) => {
+    // ✅ 유저별 qty는 로컬로 즉시 반영
     incItem(userKey, restaurantId, item.id);
 
-    completeOrderIfNeeded(nextTotal);
+    try {
+      // ✅ 공동 금액은 서버에 반영(다른 기기도 polling으로 보게 됨)
+      const st = await postDeltaToServer(+item.price);
+      const nextTotal = Number(st?.pendingPrice ?? total + item.price);
+
+      completeOrderIfNeeded(nextTotal);
+    } catch (e: any) {
+      // 서버 실패면 로컬 qty 롤백
+      decItem(userKey, restaurantId, item.id);
+      Alert.alert("오류", e?.message ?? "담기 실패(네트워크/서버)");
+    }
   };
 
-  const decrease = (item: MenuItem) => {
+  const decrease = async (item: MenuItem) => {
     const qty = quantities[item.id] ?? 0;
     if (qty <= 0) return;
 
-    addPrice(restaurantId, -item.price);
-
-    // ✅ 유저별 수량 감소
+    // ✅ 유저별 qty는 로컬로 즉시 반영
     decItem(userKey, restaurantId, item.id);
+
+    try {
+      await postDeltaToServer(-item.price);
+    } catch (e: any) {
+      // 서버 실패면 로컬 qty 롤백
+      incItem(userKey, restaurantId, item.id);
+      Alert.alert("오류", e?.message ?? "빼기 실패(네트워크/서버)");
+    }
   };
 
   return (
@@ -443,7 +547,12 @@ const styles = StyleSheet.create({
   itemName: { fontSize: 15, fontWeight: "900", color: "#111827" },
   itemDesc: { fontSize: 12, color: "#6B7280" },
 
-  row: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: 4 },
+  row: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginTop: 4,
+  },
   price: { fontSize: 13, fontWeight: "900", color: ORANGE },
 
   addBtn: {
