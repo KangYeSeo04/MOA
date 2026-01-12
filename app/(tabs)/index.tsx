@@ -116,9 +116,9 @@ export default function HomeScreen() {
   
       {/* 🔍 네이버지도 스타일 검색바 */}
       <View style={styles.searchBarWrapper}>
-        <SearchBar
-          onNotificationClick={() => {
-            router.push("/notification"); // expo-router 스타일
+      <SearchBar
+          onPressSearch={() => {
+            router.push("/search");   // ✅ 여기!!
           }}
         />
       </View>

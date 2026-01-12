@@ -7,9 +7,10 @@ import {
   checkoutCart,
 } from "../services/restaurant.service";
 
-export async function getRestaurants(_req: Request, res: Response) {
+export async function getRestaurants(req: Request, res: Response) {
   try {
-    const restaurants = await listRestaurants();
+    const q = String(req.query.query ?? "").trim(); // ✅ query 파라미터 읽기
+    const restaurants = await listRestaurants(q);   // ✅ 서비스로 전달
     res.json(restaurants);
   } catch (e: any) {
     console.error(e);

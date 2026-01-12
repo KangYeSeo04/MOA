@@ -8,28 +8,27 @@ import {
 import { Bell, Search } from 'lucide-react-native';
 
 interface SearchBarProps {
-  onNotificationClick: () => void;
+  onPressSearch: () => void;
 }
 
-export function SearchBar({ onNotificationClick }: SearchBarProps) {
+export function SearchBar({ onPressSearch }: SearchBarProps) {
   return (
-    <View style={styles.container}>
-
-      {/* 검색 입력 */}
+    <TouchableOpacity
+      activeOpacity={0.9}
+      onPress={onPressSearch}
+      style={styles.container}
+    >
       <View style={styles.searchWrapper}>
-        <Search
-          size={20}
-          color="#9CA3AF"
-          style={styles.searchIcon}
-        />
+        <Search size={20} color="#9CA3AF" style={styles.searchIcon} />
         <TextInput
           placeholder="식당 검색하기"
           placeholderTextColor="#9CA3AF"
           style={styles.input}
-          returnKeyType="search"
+          editable={false}   // ✅ 홈에서는 입력 막기
+          pointerEvents="none"
         />
       </View>
-    </View>
+    </TouchableOpacity>
   );
 }
 
