@@ -44,7 +44,7 @@ export default function HomeScreen() {
 
   const fetchRestaurants = useCallback(async () => {
     const url = `${API_BASE}/restaurants`;
-    // console.log("FETCH RESTAURANTS =", url);
+    console.log("FETCH URL =", url);
 
     const res = await fetch(url);
     if (!res.ok) {

@@ -24,7 +24,8 @@ app.use("/auth", authRoutes);
 app.use("/restaurants", restaurantsRoutes);
 
 const PORT = Number(process.env.PORT) || 4000;
+const HOST = "0.0.0.0";
 
-app.listen(PORT, () => {
+app.listen(PORT, HOST, () => {
   console.log(`🚀 Server listening on http://localhost:${PORT}`);
 });
