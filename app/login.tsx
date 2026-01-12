@@ -1,6 +1,6 @@
 // app/login.tsx
 import React, { useState } from "react";
-import { login } from "./lib/auth";
+import { login, setToken } from "./lib/auth"; // ✅ token 저장
 import {
   View,
   Text,
@@ -20,7 +20,7 @@ import { useAuthStore } from "@/stores/auth";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 export default function Login() {
-  const [identifier, setIdentifier] = useState(""); // username or email
+  const [identifier, setIdentifier] = useState(""); // username 또는 email
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(true);
@@ -41,23 +41,29 @@ export default function Login() {
 
       const data: any = await login({ identifier: id, password });
 
-      // ✅ 서버는 { token, user } 를 반환해야 함 (백엔드 auth.service 기준)
+      // ✅ 서버는 { token, user } 를 반환해야 함
       if (!data?.token || !data?.user) {
         throw new Error("서버 응답이 올바르지 않습니다 (token/user 없음)");
       }
 
+      // ✅ token 저장: /user/me 같은 인증 API에서 사용
+      await setToken(String(data.token));
+
       /**
-       * ✅ 여기서 userKey를 저장 (menu.tsx가 읽는 키)
-       * - 우선순위: data.user.username -> 입력한 identifier
-       * - “계정별 내 수량”을 보여주기 위한 식별자라서,
-       *   username(고유)이면 가장 안정적임.
+       * ✅ auth_user_key 저장 (menu.tsx가 읽는 키)
+       * - 계정별 “내 수량” 구분용
+       * - 가장 안정적인 값: username (unique)
        */
       const userKey = String(data.user.username ?? id).trim();
       await AsyncStorage.setItem("auth_user_key", userKey);
 
-      // ✅ 로그인 상태 저장 (앱 재실행 후 유지하려면 auth store 쪽에서도 persist 되어 있어야 함)
-      // rememberMe를 false로 쓰고 싶으면 여기서 분기해서 setAuth 대신 메모리만 유지하도록 바꾸면 됨.
-      setAuth(data.token, data.user);
+      // ✅ 로그인 상태 유지 (persist는 useAuthStore 구현에 따라)
+      if (rememberMe) {
+        setAuth(data.token, data.user);
+      } else {
+        // 요구사항상 “앱 껐다 켜도 유지”가 목표라 보통 true로 씀
+        setAuth(data.token, data.user);
+      }
 
       router.replace("/(tabs)");
     } catch (e: any) {
@@ -102,12 +108,7 @@ export default function Login() {
             <View style={styles.field}>
               <Text style={styles.label}>비밀번호</Text>
               <View style={styles.inputWrap}>
-                <Ionicons
-                  name="lock-closed-outline"
-                  size={18}
-                  color="#9ca3af"
-                  style={styles.leftIcon}
-                />
+                <Ionicons name="lock-closed-outline" size={18} color="#9ca3af" style={styles.leftIcon} />
                 <TextInput
                   value={password}
                   onChangeText={setPassword}
@@ -132,13 +133,9 @@ export default function Login() {
               </View>
             </View>
 
-            {/* 로그인 유지 */}
+            {/* 로그인 상태 유지 & 비밀번호 찾기 */}
             <View style={styles.rowBetween}>
-              <Pressable
-                onPress={() => setRememberMe((v) => !v)}
-                style={styles.rememberRow}
-                hitSlop={10}
-              >
+              <Pressable onPress={() => setRememberMe((v) => !v)} style={styles.rememberRow} hitSlop={10}>
                 <Checkbox
                   value={rememberMe}
                   onValueChange={setRememberMe}

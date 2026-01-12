@@ -5,6 +5,7 @@ import * as dotenv from "dotenv";
 
 import authRoutes from "./routes/auth";
 import restaurantsRoutes from "./routes/restaurant";
+import userRouter from "./routes/user";
 
 dotenv.config();
 
@@ -12,6 +13,8 @@ const app = express();
 
 app.use(cors());
 app.use(express.json());
+app.use("/user", userRouter);
+
 
 app.get("/health", (_req: Request, res: Response) => {
   res.json({ ok: true });
