@@ -253,9 +253,11 @@ export default function BurgerMenuScreen() {
   
 
   const goBackToMap = useCallback(() => {
-    router.back();
-  }, []);
-  
+    router.replace({
+      pathname: "/(tabs)",
+      params: { focusRid: String(restaurantId) },
+    });
+  }, [restaurantId]);
 
   useEffect(() => {
     if (Platform.OS !== "android") return;
@@ -314,23 +316,6 @@ export default function BurgerMenuScreen() {
     }
   };
 
-  const completeOrderOnServer = async () => {
-    const res = await fetch(`${API_BASE}/restaurants/${restaurantId}/complete`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-    });
-
-    if (!res.ok) {
-      const text = await res.text().catch(() => "");
-      throw new Error(`complete failed: ${res.status} ${text}`);
-    }
-
-    const st = (await res.json().catch(() => null)) as RestaurantState | null;
-    if (st && typeof st.pendingPrice === "number") {
-      setTotal(restaurantId, st.pendingPrice);
-    }
-    return st;
-  };
 
   // ✅ 최소주문 도달 시: 주문 접수(리셋) 하지 말고 "안내"만 띄우기
 const completeOrderIfNeeded = (nextTotal: number) => {

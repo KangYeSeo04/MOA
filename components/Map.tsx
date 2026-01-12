@@ -1,4 +1,10 @@
-import React, { useMemo, useRef, useEffect } from "react";
+import React, {
+  useMemo,
+  useRef,
+  useEffect,
+  useImperativeHandle,
+  forwardRef,
+} from "react";
 import { View, Text, StyleSheet } from "react-native";
 import MapView, { Marker, Circle, Callout, Region } from "react-native-maps";
 import { useCartStore } from "../stores/cart";
@@ -12,134 +18,181 @@ export interface Restaurant {
   hasGroupUsers: boolean;
 }
 
+export type MapHandle = {
+  moveTo: (lat: number, lng: number) => void;
+};
+
 interface RestaurantMapProps {
   restaurants: Restaurant[];
   center: [number, number];
   onRestaurantPress?: (restaurantId: number) => void;
+
+  // ✅ menu에서 돌아올 때 “이 식당을 중심으로” 보여주기
+  focusRestaurantId?: number;
 }
 
 /**
  * ✅ 추천 줌 레벨: 0.004 ~ 0.008
- * - 너무 확대되면 값을 키우고
- * - 너무 축소되면 값을 줄이면 됨
  */
 const DEFAULT_DELTA = 0.006;
 
-export function Map({ restaurants, center, onRestaurantPress }: RestaurantMapProps) {
-  const mapRef = useRef<MapView>(null);
+export const Map = forwardRef<MapHandle, RestaurantMapProps>(
+  ({ restaurants, center, onRestaurantPress, focusRestaurantId }, ref) => {
+    const mapRef = useRef<MapView>(null);
 
-  // ✅ 첫 진입에만 center로 강제 이동 (그 이후에는 화면 상태 유지)
-  const didInitRef = useRef(false);
+    // ✅ 첫 진입에만 center로 강제 이동
+    const didInitRef = useRef(false);
 
-  const initialRegion: Region = useMemo(
-    () => ({
-      latitude: center[0],
-      longitude: center[1],
-      latitudeDelta: DEFAULT_DELTA,
-      longitudeDelta: DEFAULT_DELTA,
-    }),
-    [center]
-  );
+    // ✅ focus가 바뀔 때만 이동(중복 방지)
+    const lastFocusRef = useRef<number | null>(null);
 
-  useEffect(() => {
-    if (!mapRef.current) return;
-    if (didInitRef.current) return;
-
-    didInitRef.current = true;
-
-    mapRef.current.animateToRegion(
-      {
+    const initialRegion: Region = useMemo(
+      () => ({
         latitude: center[0],
         longitude: center[1],
         latitudeDelta: DEFAULT_DELTA,
         longitudeDelta: DEFAULT_DELTA,
-      },
-      300
+      }),
+      [center]
     );
-  }, [center]);
 
-  const totals = useCartStore((s) => s.totals);
+    // 1) 첫 진입 center 이동
+    useEffect(() => {
+      if (!mapRef.current) return;
+      if (didInitRef.current) return;
 
-  /**
-   * 🎨 마커 색상
-   * - total <= 0 -> 회색
-   * - progress(0~1) 따라 연한 빨강 -> 진한 빨강
-   * - NaN/Infinity 방지 (깨지면 회색으로)
-   */
-  const getMarkerColor = (restaurant: Restaurant) => {
-    const total = Number(totals[restaurant.id] ?? 0);
-    if (!Number.isFinite(total) || total <= 0) return "#9CA3AF";
+      didInitRef.current = true;
 
-    const min = Number(restaurant.minOrderAmount);
-    const safeMin = Number.isFinite(min) && min > 0 ? min : 1;
+      mapRef.current.animateToRegion(
+        {
+          latitude: center[0],
+          longitude: center[1],
+          latitudeDelta: DEFAULT_DELTA,
+          longitudeDelta: DEFAULT_DELTA,
+        },
+        250
+      );
+    }, [center]);
 
-    const progress = Math.max(0, Math.min(1, total / safeMin));
+    // 2) ✅ focusRestaurantId가 들어오면 해당 식당으로 줌/이동
+    useEffect(() => {
+      if (!mapRef.current) return;
+      if (!focusRestaurantId) return;
 
-    const light = { r: 252, g: 165, b: 165 };
-    const dark = { r: 185, g: 28, b: 28 };
+      const r = restaurants.find((x) => x.id === focusRestaurantId);
+      if (!r) return;
 
-    const r = Math.round(light.r + (dark.r - light.r) * progress);
-    const g = Math.round(light.g + (dark.g - light.g) * progress);
-    const b = Math.round(light.b + (dark.b - light.b) * progress);
+      if (lastFocusRef.current === focusRestaurantId) return;
+      lastFocusRef.current = focusRestaurantId;
 
-    if (![r, g, b].every(Number.isFinite)) return "#9CA3AF";
-    return `rgb(${r}, ${g}, ${b})`;
-  };
+      mapRef.current.animateToRegion(
+        {
+          latitude: r.lat,
+          longitude: r.lng,
+          latitudeDelta: DEFAULT_DELTA,
+          longitudeDelta: DEFAULT_DELTA,
+        },
+        300
+      );
+    }, [focusRestaurantId, restaurants]);
 
-  return (
-    <MapView
-      ref={mapRef}
-      style={styles.map}
-      initialRegion={initialRegion}
-      showsCompass={false}
-      showsMyLocationButton={false}
-      toolbarEnabled={false}
-      zoomEnabled
-      scrollEnabled
-      rotateEnabled
-      pitchEnabled
-    >
-      {/* 기준 위치 표시 */}
-      <Circle
-        center={{ latitude: center[0], longitude: center[1] }}
-        radius={60}
-        strokeColor="#3B82F6"
-        fillColor="rgba(59,130,246,0.25)"
-        strokeWidth={2}
-      />
-
-      {restaurants.map((restaurant) => {
-        const color = getMarkerColor(restaurant);
-
-        const total = Number(totals[restaurant.id] ?? 0);
-        const min = Number(restaurant.minOrderAmount ?? 0);
-        const remaining = Math.max(0, min - total);
-
-        return (
-          <Marker
-            key={restaurant.id}
-            coordinate={{ latitude: restaurant.lat, longitude: restaurant.lng }}
-            anchor={{ x: 0.5, y: 0.5 }}
-            onPress={() => onRestaurantPress?.(restaurant.id)}
-          >
-            <View style={[styles.marker, { backgroundColor: color }]} />
-            <Callout tooltip>
-              <View style={styles.callout}>
-                <Text style={styles.title}>{restaurant.name}</Text>
-                <Text style={styles.meta}>
-                  최소주문금액: {Number(min).toLocaleString()}원
-                </Text>
-                <Text style={styles.meta}>담은금액: {Number(total).toLocaleString()}원</Text>
-                <Text style={styles.meta}>남은금액: {Number(remaining).toLocaleString()}원</Text>
-                <Text style={[styles.meta, styles.hint]}>(점을 누르면 메뉴로 이동)</Text>
-              </View>
-            </Callout>
-          </Marker>
+    // ✅ HomeScreen에서 지도 카메라 강제 이동할 수 있게 노출
+    useImperativeHandle(ref, () => ({
+      moveTo: (lat: number, lng: number) => {
+        mapRef.current?.animateToRegion(
+          {
+            latitude: lat,
+            longitude: lng,
+            latitudeDelta: DEFAULT_DELTA,
+            longitudeDelta: DEFAULT_DELTA,
+          },
+          300
         );
-      })}
-    </MapView>
-  );
-}
+      },
+    }));
+
+    const totals = useCartStore((s) => s.totals);
+
+    const getMarkerColor = (restaurant: Restaurant) => {
+      const total = Number(totals[restaurant.id] ?? 0);
+      if (!Number.isFinite(total) || total <= 0) return "#9CA3AF";
+
+      const min = Number(restaurant.minOrderAmount);
+      const safeMin = Number.isFinite(min) && min > 0 ? min : 1;
+
+      const progress = Math.max(0, Math.min(1, total / safeMin));
+
+      const light = { r: 252, g: 165, b: 165 };
+      const dark = { r: 185, g: 28, b: 28 };
+
+      const r = Math.round(light.r + (dark.r - light.r) * progress);
+      const g = Math.round(light.g + (dark.g - light.g) * progress);
+      const b = Math.round(light.b + (dark.b - light.b) * progress);
+
+      if (![r, g, b].every(Number.isFinite)) return "#9CA3AF";
+      return `rgb(${r}, ${g}, ${b})`;
+    };
+
+    return (
+      <MapView
+        ref={mapRef}
+        style={styles.map}
+        initialRegion={initialRegion}
+        showsCompass={false}
+        showsMyLocationButton={false}
+        toolbarEnabled={false}
+        zoomEnabled
+        scrollEnabled
+        rotateEnabled
+        pitchEnabled
+      >
+        <Circle
+          center={{ latitude: center[0], longitude: center[1] }}
+          radius={60}
+          strokeColor="#3B82F6"
+          fillColor="rgba(59,130,246,0.25)"
+          strokeWidth={2}
+        />
+
+        {restaurants.map((restaurant) => {
+          const color = getMarkerColor(restaurant);
+
+          const total = Number(totals[restaurant.id] ?? 0);
+          const min = Number(restaurant.minOrderAmount ?? 0);
+          const remaining = Math.max(0, min - total);
+
+          return (
+            <Marker
+              key={restaurant.id}
+              coordinate={{ latitude: restaurant.lat, longitude: restaurant.lng }}
+              anchor={{ x: 0.5, y: 0.5 }}
+              onPress={() => onRestaurantPress?.(restaurant.id)}
+            >
+              <View style={[styles.marker, { backgroundColor: color }]} />
+              <Callout tooltip>
+                <View style={styles.callout}>
+                  <Text style={styles.title}>{restaurant.name}</Text>
+                  <Text style={styles.meta}>
+                    최소주문금액: {Number(min).toLocaleString()}원
+                  </Text>
+                  <Text style={styles.meta}>
+                    담은금액: {Number(total).toLocaleString()}원
+                  </Text>
+                  <Text style={styles.meta}>
+                    남은금액: {Number(remaining).toLocaleString()}원
+                  </Text>
+                  <Text style={[styles.meta, styles.hint]}>(점을 누르면 메뉴로 이동)</Text>
+                </View>
+              </Callout>
+            </Marker>
+          );
+        })}
+      </MapView>
+    );
+  }
+);
+
+Map.displayName = "Map";
 
 const styles = StyleSheet.create({
   map: { width: "100%", height: "100%" },
@@ -178,6 +231,5 @@ const styles = StyleSheet.create({
   },
 
   meta: { fontSize: 14, color: "#4B5563", marginTop: 2 },
-
   hint: { marginTop: 8, fontWeight: "700" },
 });
