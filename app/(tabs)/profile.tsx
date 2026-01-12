@@ -8,7 +8,10 @@ import {
   StyleSheet,
   ScrollView,
   Alert,
+  Modal,
+  TextInput,
 } from "react-native";
+
 import { Ionicons } from "@expo/vector-icons";
 import type { ImageSourcePropType } from "react-native";
 import ProfileEdit from "../../components/ProfileEdit";
@@ -35,6 +38,10 @@ export default function ProfileScreen() {
   const doLogout = useAuthStore((s) => s.logout);
 
   const [showEditProfile, setShowEditProfile] = useState(false);
+  const [addresses, setAddresses] = useState<string[]>([]);
+  const [addressModalVisible, setAddressModalVisible] = useState(false);
+  const [addressInput, setAddressInput] = useState("");
+  const [editingIndex, setEditingIndex] = useState<number | null>(null);
 
   // ✅ authStore 기반으로 우선 표시
   const derivedProfile = useMemo<ProfileData>(() => {
@@ -173,13 +180,81 @@ export default function ProfileScreen() {
 
         {/* ✅ 결제 정보 */}
         <CardSection title="결제 정보">
-          <MenuRow title="결제수단" onPress={() => Alert.alert("TODO", "결제수단")} />
+          <MenuRow
+            title="결제수단"
+            rightIcon="add-outline"
+            onPress={() => Alert.alert("TODO", "결제수단")}
+          />
         </CardSection>
 
         {/* ✅ 주소 정보 (요청: 주소관리 복구) */}
         <CardSection title="주소 정보">
-          <MenuRow title="주소관리" onPress={() => Alert.alert("TODO", "주소관리")} />
+          <MenuRow
+            title="주소관리"
+            rightIcon="add-outline"
+            onPress={() => {
+              setEditingIndex(null);
+              setAddressInput("");
+              setAddressModalVisible(true);
+            }}
+          />
+
+
+          {/* ✅ 등록된 주소 리스트 */}
+          {addresses.length > 0 && (
+  <View style={{ marginTop: 10, gap: 10 }}>
+    {addresses.map((addr, idx) => (
+      <View key={`${addr}-${idx}`} style={styles.addressCard}>
+        <Ionicons name="location-outline" size={18} color="#6B7280" />
+
+        <Text style={styles.addressText} numberOfLines={2}>
+          {addr}
+        </Text>
+
+        {/* ✅ 오른쪽 끝: 수정/삭제 */}
+        <View style={styles.addressActions}>
+          <Pressable
+            onPress={() => {
+              setEditingIndex(idx);
+              setAddressInput(addr);
+              setAddressModalVisible(true);
+            }}
+            style={({ pressed }) => [
+              styles.addressActionBtn,
+              pressed && styles.pressed,
+            ]}
+          >
+            <Text style={styles.addressActionText}>수정</Text>
+          </Pressable>
+
+          <Pressable
+            onPress={() => {
+              Alert.alert("삭제", "이 주소를 삭제할까요?", [
+                { text: "취소", style: "cancel" },
+                {
+                  text: "삭제",
+                  style: "destructive",
+                  onPress: () => {
+                    setAddresses((prev) => prev.filter((_, i) => i !== idx));
+                  },
+                },
+              ]);
+            }}
+            style={({ pressed }) => [
+              styles.addressActionBtn,
+              pressed && styles.pressed,
+            ]}
+          >
+            <Text style={styles.addressActionText}>삭제</Text>
+          </Pressable>
+        </View>
+      </View>
+    ))}
+  </View>
+)}
+
         </CardSection>
+
 
         {/* ✅ 고객센터 */}
         <CardSection title="고객센터">
@@ -197,6 +272,78 @@ export default function ProfileScreen() {
           <Text style={styles.logoutText}>로그아웃</Text>
         </Pressable>
       </View>
+            {/* ✅ 주소 추가 모달 */}
+            <Modal
+        visible={addressModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setAddressModalVisible(false)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalCard}>
+          <Text style={styles.modalTitle}>
+            {editingIndex === null ? "주소 추가" : "주소 수정"}
+          </Text>
+          <Text style={styles.modalSubmitText}>
+            {editingIndex === null ? "주소 등록" : "수정하기"}
+          </Text>
+
+            <TextInput
+              placeholder="상세 주소작성"
+              value={addressInput}
+              onChangeText={setAddressInput}
+              style={styles.modalInput}
+              placeholderTextColor="#9CA3AF"
+            />
+
+            <Pressable
+              style={({ pressed }) => [
+                styles.modalSubmitBtn,
+                pressed && styles.pressed,
+              ]}
+              onPress={() => {
+                const trimmed = addressInput.trim();
+                if (!trimmed) {
+                  Alert.alert("안내", "상세 주소를 입력해주세요.");
+                  return;
+                }
+              
+                if (editingIndex === null) {
+                  // ✅ 새 주소 추가
+                  setAddresses((prev) => [trimmed, ...prev]);
+                } else {
+                  // ✅ 기존 주소 수정
+                  setAddresses((prev) =>
+                    prev.map((v, i) => (i === editingIndex ? trimmed : v))
+                  );
+                }
+              
+                setAddressInput("");
+                setEditingIndex(null);
+                setAddressModalVisible(false);
+              }}
+              
+            >
+              <Text style={styles.modalSubmitText}>주소 등록</Text>
+            </Pressable>
+
+            <Pressable
+              style={({ pressed }) => [
+                styles.modalCancelBtn,
+                pressed && styles.pressed,
+              ]}
+              onPress={() => {
+                setAddressInput("");
+                setEditingIndex(null);
+                setAddressModalVisible(false);
+              }}
+            >
+              <Text style={styles.modalCancelText}>닫기</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
+
     </ScrollView>
   );
 }
@@ -232,17 +379,26 @@ function CardSection({ title, children }: { title: string; children: React.React
   );
 }
 
-function MenuRow({ title, onPress }: { title: string; onPress: () => void }) {
+function MenuRow({
+  title,
+  onPress,
+  rightIcon = "chevron-forward",
+}: {
+  title: string;
+  onPress: () => void;
+  rightIcon?: keyof typeof Ionicons.glyphMap;
+}) {
   return (
     <Pressable
       onPress={onPress}
       style={({ pressed }) => [styles.menuItem, pressed && styles.pressed]}
     >
       <Text style={styles.menuTitle}>{title}</Text>
-      <Ionicons name="chevron-forward" size={20} color="#9CA3AF" />
+      <Ionicons name={rightIcon} size={20} color="#9CA3AF" />
     </Pressable>
   );
 }
+
 
 /* ---------- Styles ---------- */
 
@@ -340,4 +496,93 @@ const styles = StyleSheet.create({
   logoutText: { color: "white", fontSize: 16, fontWeight: "900" },
 
   pressed: { opacity: 0.85 },
+
+    // ✅ 주소 카드
+    addressCard: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 10,
+      backgroundColor: "#F9FAFB",
+      borderRadius: 12,
+      paddingVertical: 12,
+      paddingHorizontal: 12,
+      borderWidth: 1,
+      borderColor: "#E5E7EB",
+    },
+    addressText: {
+      flex: 1,
+      fontSize: 14,
+      color: "#111827",
+      fontWeight: "600",
+    },
+  
+    // ✅ 모달
+    modalBackdrop: {
+      flex: 1,
+      backgroundColor: "rgba(0,0,0,0.4)",
+      justifyContent: "center",
+      paddingHorizontal: 24,
+    },
+    modalCard: {
+      backgroundColor: "#FFFFFF",
+      borderRadius: 18,
+      padding: 18,
+    },
+    modalTitle: {
+      fontSize: 18,
+      fontWeight: "900",
+      color: "#111827",
+      marginBottom: 12,
+    },
+    modalInput: {
+      borderWidth: 1,
+      borderColor: "#E5E7EB",
+      borderRadius: 12,
+      paddingHorizontal: 12,
+      paddingVertical: 12,
+      fontSize: 14,
+      color: "#111827",
+      backgroundColor: "#F9FAFB",
+      marginBottom: 12,
+    },
+    modalSubmitBtn: {
+      backgroundColor: ORANGE,
+      borderRadius: 14,
+      paddingVertical: 14,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    modalSubmitText: { color: "#FFFFFF", fontSize: 15, fontWeight: "900" },
+  
+    modalCancelBtn: {
+      marginTop: 10,
+      borderRadius: 14,
+      paddingVertical: 12,
+      alignItems: "center",
+      justifyContent: "center",
+      backgroundColor: "#F3F4F6",
+    },
+    modalCancelText: { color: "#374151", fontSize: 14, fontWeight: "800" },
+
+    addressActions: {
+      flexDirection: "row",
+      gap: 8,
+    },
+    
+    addressActionBtn: {
+      paddingHorizontal: 14,
+      paddingVertical: 8,
+      borderRadius: 999,
+      borderWidth: 1,
+      borderColor: "#D1D5DB",
+      backgroundColor: "#FFFFFF",
+    },
+    
+    addressActionText: {
+      fontSize: 13,
+      fontWeight: "800",
+      color: "#111827",
+    },
+    
+  
 });

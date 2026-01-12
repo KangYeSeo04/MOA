@@ -23,23 +23,6 @@ export async function getRestaurants(req: Request, res: Response) {
   }
 }
 
-/*
-// GET /restaurants/:id  (필요하면 사용)
-export async function getRestaurantById(req: Request, res: Response) {
-  try {
-    const id = Number(req.params.id);
-    if (Number.isNaN(id)) return res.status(400).json({ message: "Invalid restaurant id" });
-
-    const r = await getRestaurant(id);
-    if (!r) return res.status(404).json({ message: "Restaurant not found" });
-
-    return res.json(r);
-  } catch (e: any) {
-    console.error(e);
-    return res.status(500).json({ message: e?.message ?? "Internal Server Error" });
-  }
-}
-*/
 
 // GET /restaurants/:id/menus
 export async function getMenusByRestaurant(req: Request, res: Response) {
