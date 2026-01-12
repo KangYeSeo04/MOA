@@ -250,6 +250,7 @@ export default function BurgerMenuScreen() {
   const cartCount = useMemo(() => {
     return Object.values(quantities).reduce((acc, v) => acc + v, 0);
   }, [quantities]);
+  
 
   const goBackToMap = useCallback(() => {
     router.back();
@@ -331,39 +332,46 @@ export default function BurgerMenuScreen() {
     return st;
   };
 
-  // ✅ 주문완료 알럿은 “내가 + 눌러서 임계치 넘긴 경우”만
-  const completeOrderIfNeeded = (nextTotal: number) => {
-    if (orderingLockedRef.current) return;
-    if (!selfTriggeredRef.current) return; // ✅ 핵심
-    if (nextTotal < minOrderAmount) return;
+  // ✅ 최소주문 도달 시: 주문 접수(리셋) 하지 말고 "안내"만 띄우기
+const completeOrderIfNeeded = (nextTotal: number) => {
+  if (orderingLockedRef.current) return;
+  if (!selfTriggeredRef.current) return; // 내가 + 눌렀을 때만
+  if (nextTotal < minOrderAmount) return;
 
-    orderingLockedRef.current = true;
-    setOrderingLocked(true);
+  orderingLockedRef.current = true;
+  setOrderingLocked(true);
 
-    Alert.alert(
-      "주문 접수 완료",
-      `총 ${nextTotal.toLocaleString()}원 담겨서 주문이 접수되었어요!\n(공동 장바구니가 초기화됩니다)`,
-      [
-        {
-          text: "확인",
-          onPress: async () => {
-            try {
-              await completeOrderOnServer();
-            } catch (e: any) {
-              Alert.alert("오류", e?.message ?? "주문 접수 처리 실패");
-            } finally {
-              // ✅ 로컬 잔상 제거
-              resetRestaurantItemsForAllUsers(restaurantId);
-              setOrderingLocked(false);
-              orderingLockedRef.current = false;
-              selfTriggeredRef.current = false;
-            }
-          },
+  Alert.alert(
+    "최소주문금액 달성!",
+    `총 ${nextTotal.toLocaleString()}원이 담겼어요.\n장바구니에서 주문을 완료해 주세요.`,
+    [
+      {
+        text: "장바구니 보기",
+        onPress: () => {
+          router.push({
+            pathname: "/order_cart", // ✅ 너가 만든 장바구니 화면 경로에 맞춰
+            params: { rid: String(restaurantId), name: restaurantName },
+          });
+          // ✅ 다음에 또 알림 뜰 수 있게 해제
+          orderingLockedRef.current = false;
+          setOrderingLocked(false);
+          selfTriggeredRef.current = false;
         },
-      ],
-      { cancelable: false }
-    );
-  };
+      },
+      {
+        text: "계속 담기",
+        style: "cancel",
+        onPress: () => {
+          // ✅ 알림만 닫고 계속 담기
+          orderingLockedRef.current = false;
+          setOrderingLocked(false);
+          selfTriggeredRef.current = false;
+        },
+      },
+    ]
+  );
+};
+
 
   // ----------------------------
   // ✅ 버튼 핸들러
@@ -424,9 +432,6 @@ export default function BurgerMenuScreen() {
 
         <View style={styles.headerTitleWrap}>
           <Text style={styles.title}>{restaurantName}</Text>
-          <Text style={styles.subtitle}>
-            담은 금액: {total.toLocaleString()}원 / {minOrderAmount.toLocaleString()}원
-          </Text>
         </View>
 
         <View style={styles.cartWrap}>
@@ -491,7 +496,11 @@ export default function BurgerMenuScreen() {
         <FlatList
           data={filtered}
           keyExtractor={(m) => m.id}
-          contentContainerStyle={{ padding: 16, gap: 12, paddingBottom: 24 }}
+          contentContainerStyle={{
+            padding: 16,
+            gap: 12,
+            paddingBottom: cartCount > 0 ? 120 : 24, // ✅ 하단바 생길 때 공간 확보
+          }}
           renderItem={({ item }) => {
             const qty = quantities[item.id] ?? 0;
 
@@ -537,6 +546,39 @@ export default function BurgerMenuScreen() {
         />
       )}
     </SafeAreaView>
+    {cartCount > 0 ? (
+  <View style={styles.bottomBarOuter} pointerEvents="box-none">
+    <View style={styles.bottomBar}>
+      <View style={{ flex: 1 }}>
+        <Text style={styles.bottomPrice}>
+          {total.toLocaleString()}원
+        </Text>
+        <Text style={styles.bottomSub}>
+          최소주문 {minOrderAmount.toLocaleString()}원
+        </Text>
+      </View>
+
+      <Pressable
+        onPress={() => {
+          router.push({
+            pathname: "/order_cart",
+            params: {
+              rid: String(restaurantId),
+              name: restaurantName,
+            },
+          });
+        }}
+        style={styles.bottomCartBtn}
+      >
+        <View style={styles.bottomCountDot}>
+          <Text style={styles.bottomCountText}>{cartCount}</Text>
+        </View>
+        <Text style={styles.bottomCartBtnText}>장바구니 보기</Text>
+      </Pressable>
+    </View>
+  </View>
+) : null}
+
     </>
   );
 }
@@ -662,4 +704,79 @@ const styles = StyleSheet.create({
     minWidth: 22,
     textAlign: "center",
   },
+
+  bottomBarOuter: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 0,
+    paddingHorizontal: 16,
+    paddingBottom: 14,
+  },
+  
+  bottomBar: {
+    backgroundColor: "white",
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  
+    // 살짝 떠있는 느낌(배민 느낌)
+    shadowColor: "#000",
+    shadowOpacity: 0.12,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 8,
+  },
+  
+  bottomPrice: {
+    fontSize: 22,
+    fontWeight: "900",
+    color: "#111827",
+  },
+  
+  bottomSub: {
+    marginTop: 2,
+    fontSize: 12,
+    color: "#6B7280",
+    fontWeight: "700",
+  },
+  
+  bottomCartBtn: {
+    backgroundColor: "#f57c00", // ✅ 요청한 색
+    borderRadius: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    minWidth: 150,
+    justifyContent: "center",
+  },
+  
+  bottomCartBtnText: {
+    color: "white",
+    fontSize: 14,
+    fontWeight: "900",
+  },
+  
+  bottomCountDot: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: "rgba(0,0,0,0.18)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  
+  bottomCountText: {
+    color: "white",
+    fontSize: 12,
+    fontWeight: "900",
+  },
+  
 });
