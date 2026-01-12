@@ -1,3 +1,4 @@
+// app/login.tsx
 import React, { useState } from "react";
 import { login } from "./lib/auth";
 import {
@@ -10,29 +11,59 @@ import {
   KeyboardAvoidingView,
   Platform,
   ScrollView,
+  ActivityIndicator,
 } from "react-native";
 import Checkbox from "expo-checkbox";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
+import { useAuthStore } from "@/stores/auth";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 export default function Login() {
-  const [identifier, setIdentifier] = useState(""); // ✅ email -> identifier
+  const [identifier, setIdentifier] = useState(""); // username or email
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
-  const [rememberMe, setRememberMe] = useState(false);
+  const [rememberMe, setRememberMe] = useState(true);
+  const [loading, setLoading] = useState(false);
+
+  const setAuth = useAuthStore((s) => s.setAuth);
 
   const handleSubmit = async () => {
-    if (!identifier.trim() || !password) {
+    const id = identifier.trim();
+
+    if (!id || !password) {
       Alert.alert("안내", "아이디(또는 이메일)와 비밀번호를 입력해주세요");
       return;
     }
 
     try {
-      const data = await login({ identifier: identifier.trim(), password });
-      // TODO: rememberMe가 true면 token 저장(AsyncStorage/SecureStore)하면 됨
+      setLoading(true);
+
+      const data: any = await login({ identifier: id, password });
+
+      // ✅ 서버는 { token, user } 를 반환해야 함 (백엔드 auth.service 기준)
+      if (!data?.token || !data?.user) {
+        throw new Error("서버 응답이 올바르지 않습니다 (token/user 없음)");
+      }
+
+      /**
+       * ✅ 여기서 userKey를 저장 (menu.tsx가 읽는 키)
+       * - 우선순위: data.user.username -> 입력한 identifier
+       * - “계정별 내 수량”을 보여주기 위한 식별자라서,
+       *   username(고유)이면 가장 안정적임.
+       */
+      const userKey = String(data.user.username ?? id).trim();
+      await AsyncStorage.setItem("auth_user_key", userKey);
+
+      // ✅ 로그인 상태 저장 (앱 재실행 후 유지하려면 auth store 쪽에서도 persist 되어 있어야 함)
+      // rememberMe를 false로 쓰고 싶으면 여기서 분기해서 setAuth 대신 메모리만 유지하도록 바꾸면 됨.
+      setAuth(data.token, data.user);
+
       router.replace("/(tabs)");
     } catch (e: any) {
       Alert.alert("로그인 실패", e?.message ?? "아이디 또는 비밀번호가 잘못됐습니다.");
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -54,18 +85,14 @@ export default function Login() {
             <View style={styles.field}>
               <Text style={styles.label}>아이디 / 이메일</Text>
               <View style={styles.inputWrap}>
-                <Ionicons
-                  name="person-outline"
-                  size={18}
-                  color="#9ca3af"
-                  style={styles.leftIcon}
-                />
+                <Ionicons name="person-outline" size={18} color="#9ca3af" style={styles.leftIcon} />
                 <TextInput
                   value={identifier}
                   onChangeText={setIdentifier}
                   placeholder="아이디 또는 이메일"
                   placeholderTextColor="#9ca3af"
                   autoCapitalize="none"
+                  autoCorrect={false}
                   style={styles.input}
                 />
               </View>
@@ -88,6 +115,7 @@ export default function Login() {
                   placeholderTextColor="#9ca3af"
                   secureTextEntry={!showPassword}
                   autoCapitalize="none"
+                  autoCorrect={false}
                   style={[styles.input, styles.inputWithRightButton]}
                 />
                 <Pressable
@@ -104,7 +132,7 @@ export default function Login() {
               </View>
             </View>
 
-            {/* 기억하기 & 비밀번호 찾기 */}
+            {/* 로그인 유지 */}
             <View style={styles.rowBetween}>
               <Pressable
                 onPress={() => setRememberMe((v) => !v)}
@@ -126,8 +154,23 @@ export default function Login() {
             </View>
 
             {/* 로그인 버튼 */}
-            <Pressable onPress={handleSubmit} style={({ pressed }) => [styles.primaryBtn, pressed && styles.pressed]}>
-              <Text style={styles.primaryBtnText}>로그인</Text>
+            <Pressable
+              onPress={handleSubmit}
+              disabled={loading}
+              style={({ pressed }) => [
+                styles.primaryBtn,
+                (pressed || loading) && styles.pressed,
+                loading && { opacity: 0.7 },
+              ]}
+            >
+              {loading ? (
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                  <ActivityIndicator />
+                  <Text style={styles.primaryBtnText}>로그인 중...</Text>
+                </View>
+              ) : (
+                <Text style={styles.primaryBtnText}>로그인</Text>
+              )}
             </Pressable>
 
             {/* 구분선 */}

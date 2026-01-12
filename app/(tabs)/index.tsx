@@ -1,6 +1,6 @@
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { View, StyleSheet, BackHandler, ToastAndroid, Platform } from "react-native";
-import { router } from "expo-router";
+import { router, useFocusEffect } from "expo-router";
 import { Map, Restaurant } from "../../components/Map";
 import { API_BASE } from "../../constants/api";
 
@@ -14,6 +14,7 @@ type ApiRestaurant = {
 };
 
 export default function HomeScreen() {
+  // ✅ 첫 진입 중심(모수)
   const center: [number, number] = [37.5412, 126.9962];
 
   const [restaurants, setRestaurants] = useState<Restaurant[]>([]);
@@ -40,42 +41,57 @@ export default function HomeScreen() {
     return () => sub.remove();
   }, []);
 
-  // ✅ 서버에서 restaurants 가져오기
-  useEffect(() => {
-    let cancelled = false;
+  const fetchRestaurants = useCallback(async () => {
+    const url = `${API_BASE}/restaurants`;
+    // console.log("FETCH RESTAURANTS =", url);
 
-    (async () => {
-      const url = `${API_BASE}/restaurants`;
-      console.log("FETCH URL =", url);
+    const res = await fetch(url);
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      throw new Error(`GET /restaurants failed: ${res.status} ${text}`);
+    }
 
-      const res = await fetch(url);
-      console.log("FETCH STATUS =", res.status);
+    const data: ApiRestaurant[] = await res.json();
 
-      if (!res.ok) {
-        const text = await res.text().catch(() => "");
-        throw new Error(`GET /restaurants failed: ${res.status} ${text}`);
-      }
+    const mapped: Restaurant[] = data.map((r) => ({
+      id: r.id,
+      name: r.name,
+      lat: r.latitude,
+      lng: r.longitude,
+      minOrderAmount: r.minOrderPrice,
+      pendingPrice: r.pendingPrice, // ✅ DB 공동 장바구니 금액
+      hasGroupUsers: false, // 백엔드에 없으니 임시
+    }));
 
-      const data: ApiRestaurant[] = await res.json();
-
-      const mapped: Restaurant[] = data.map((r) => ({
-        id: r.id,
-        name: r.name,
-        lat: r.latitude,
-        lng: r.longitude,
-        minOrderAmount: r.minOrderPrice,
-        hasGroupUsers: false, // 백엔드에 없으니 임시
-      }));
-
-      if (!cancelled) setRestaurants(mapped);
-    })().catch((e) => {
-      console.error("GET /restaurants ERROR =", e);
-    });
-
-    return () => {
-      cancelled = true;
-    };
+    setRestaurants(mapped);
   }, []);
+
+  // ✅ 최초 1회 로드
+  useEffect(() => {
+    fetchRestaurants().catch((e) => console.error("GET /restaurants ERROR =", e));
+  }, [fetchRestaurants]);
+
+  // ✅ (핵심) 지도 화면에 있을 때만 주기적으로 갱신 → 다른 유저가 담은 것도 반영
+  useFocusEffect(
+    useCallback(() => {
+      let cancelled = false;
+      let timer: any = null;
+
+      // 진입하자마자 한 번 갱신
+      fetchRestaurants().catch((e) => console.error("FOCUS fetchRestaurants ERROR =", e));
+
+      // 2초마다 폴링 (원하면 1~5초로 조절)
+      timer = setInterval(() => {
+        if (cancelled) return;
+        fetchRestaurants().catch((e) => console.error("POLL fetchRestaurants ERROR =", e));
+      }, 2000);
+
+      return () => {
+        cancelled = true;
+        if (timer) clearInterval(timer);
+      };
+    }, [fetchRestaurants])
+  );
 
   return (
     <View style={styles.container}>
@@ -86,7 +102,7 @@ export default function HomeScreen() {
           const r = restaurants.find((x) => x.id === rid);
 
           router.push({
-            pathname: "/menu", // ✅ 그룹명 말고 이렇게 가는 게 안전
+            pathname: "/menu",
             params: {
               rid: String(rid),
               name: r?.name ?? "메뉴",

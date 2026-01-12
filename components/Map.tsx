@@ -19,16 +19,16 @@ interface RestaurantMapProps {
 }
 
 /**
- * ✅ 추천 줌 레벨
- * - 0.003 ~ 0.008 정도가 "동네 수준"으로 보기 좋음
- * - 지금은 0.006으로 설정 (너무 확대/축소면 이 숫자만 조절)
+ * ✅ 추천 줌 레벨: 0.004 ~ 0.008
+ * - 너무 확대되면 값을 키우고
+ * - 너무 축소되면 값을 줄이면 됨
  */
 const DEFAULT_DELTA = 0.006;
 
 export function Map({ restaurants, center, onRestaurantPress }: RestaurantMapProps) {
   const mapRef = useRef<MapView>(null);
 
-  // ✅ 첫 진입에만 center/delta를 강제 적용하기 위한 플래그
+  // ✅ 첫 진입에만 center로 강제 이동 (그 이후에는 화면 상태 유지)
   const didInitRef = useRef(false);
 
   const initialRegion: Region = useMemo(
@@ -41,10 +41,10 @@ export function Map({ restaurants, center, onRestaurantPress }: RestaurantMapPro
     [center]
   );
 
-  // ✅ 최초 마운트 1회: center + 적당한 줌으로 강제 이동
   useEffect(() => {
     if (!mapRef.current) return;
     if (didInitRef.current) return;
+
     didInitRef.current = true;
 
     mapRef.current.animateToRegion(
@@ -60,12 +60,20 @@ export function Map({ restaurants, center, onRestaurantPress }: RestaurantMapPro
 
   const totals = useCartStore((s) => s.totals);
 
+  /**
+   * 🎨 마커 색상
+   * - total <= 0 -> 회색
+   * - progress(0~1) 따라 연한 빨강 -> 진한 빨강
+   * - NaN/Infinity 방지 (깨지면 회색으로)
+   */
   const getMarkerColor = (restaurant: Restaurant) => {
-    const total = totals[restaurant.id] ?? 0;
-    if (total <= 0) return "#9CA3AF";
+    const total = Number(totals[restaurant.id] ?? 0);
+    if (!Number.isFinite(total) || total <= 0) return "#9CA3AF";
 
-    const min = Math.max(1, restaurant.minOrderAmount);
-    const progress = Math.min(1, total / min);
+    const min = Number(restaurant.minOrderAmount);
+    const safeMin = Number.isFinite(min) && min > 0 ? min : 1;
+
+    const progress = Math.max(0, Math.min(1, total / safeMin));
 
     const light = { r: 252, g: 165, b: 165 };
     const dark = { r: 185, g: 28, b: 28 };
@@ -74,6 +82,7 @@ export function Map({ restaurants, center, onRestaurantPress }: RestaurantMapPro
     const g = Math.round(light.g + (dark.g - light.g) * progress);
     const b = Math.round(light.b + (dark.b - light.b) * progress);
 
+    if (![r, g, b].every(Number.isFinite)) return "#9CA3AF";
     return `rgb(${r}, ${g}, ${b})`;
   };
 
@@ -101,8 +110,10 @@ export function Map({ restaurants, center, onRestaurantPress }: RestaurantMapPro
 
       {restaurants.map((restaurant) => {
         const color = getMarkerColor(restaurant);
-        const total = totals[restaurant.id] ?? 0;
-        const remaining = restaurant.minOrderAmount - total;
+
+        const total = Number(totals[restaurant.id] ?? 0);
+        const min = Number(restaurant.minOrderAmount ?? 0);
+        const remaining = Math.max(0, min - total);
 
         return (
           <Marker
@@ -116,10 +127,10 @@ export function Map({ restaurants, center, onRestaurantPress }: RestaurantMapPro
               <View style={styles.callout}>
                 <Text style={styles.title}>{restaurant.name}</Text>
                 <Text style={styles.meta}>
-                  최소주문금액: {restaurant.minOrderAmount.toLocaleString()}원
+                  최소주문금액: {Number(min).toLocaleString()}원
                 </Text>
-                <Text style={styles.meta}>담은금액: {total.toLocaleString()}원</Text>
-                <Text style={styles.meta}>남은금액: {remaining.toLocaleString()}원</Text>
+                <Text style={styles.meta}>담은금액: {Number(total).toLocaleString()}원</Text>
+                <Text style={styles.meta}>남은금액: {Number(remaining).toLocaleString()}원</Text>
                 <Text style={[styles.meta, styles.hint]}>(점을 누르면 메뉴로 이동)</Text>
               </View>
             </Callout>

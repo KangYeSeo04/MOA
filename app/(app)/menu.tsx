@@ -17,10 +17,10 @@ import { Ionicons } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
 import { useCartStore } from "@/stores/cart";
 import { API_BASE } from "../../constants/api";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 type Category = "all" | "burger" | "side" | "drink";
 
-// 백엔드에서 오는 Menu 형태
 type ApiMenu = {
   id: number;
   restaurantId: number;
@@ -29,7 +29,6 @@ type ApiMenu = {
   amountOrdered: number;
 };
 
-// 프론트에서 쓰는 MenuItem 형태(기존 UI 유지용)
 type MenuItem = {
   id: string;
   name: string;
@@ -57,17 +56,36 @@ export default function BurgerMenuScreen() {
 
   const restaurantId = Number(rid ?? "1");
 
-  // --- store (가격/수량)
+  // ✅ 로그인한 유저 식별자 (username/email 등)
+  // - 네 auth 저장 방식에 맞게 키만 맞춰주면 됨
+  const [userKey, setUserKey] = useState<string>("guest");
+
+  useEffect(() => {
+    (async () => {
+      // 예시: auth 저장할 때 userKey를 따로 저장해두는 방식
+      // 네 프로젝트에서 저장 키가 다르면 여기만 바꾸면 됨.
+      const saved = await AsyncStorage.getItem("auth_user_key");
+      if (saved && saved.trim()) setUserKey(saved.trim());
+    })().catch(() => {});
+  }, []);
+
+  // --- store: 공동 금액
   const addPrice = useCartStore((s) => s.addPrice);
   const resetTotal = useCartStore((s) => s.resetTotal);
   const total = useCartStore((s) => s.totals[restaurantId] ?? 0);
 
-  // ✅ 핵심: selector에서 ?? {} 하지 말고, 고정 레퍼런스 EMPTY_COUNTS 사용
-  const quantities = useCartStore((s) => s.itemCounts[restaurantId] ?? EMPTY_COUNTS);
+  // --- store: 유저별 수량
+  const quantities = useCartStore(
+    (s) => s.itemCountsByUser?.[userKey]?.[restaurantId] ?? EMPTY_COUNTS
+  );
 
   const incItem = useCartStore((s) => s.increaseItem);
   const decItem = useCartStore((s) => s.decreaseItem);
-  const resetItems = useCartStore((s) => s.resetItems);
+
+  // ✅ 주문 접수 시 "모든 유저 수량" 초기화
+  const resetRestaurantItemsForAllUsers = useCartStore(
+    (s) => s.resetRestaurantItemsForAllUsers
+  );
 
   // --- 화면 상태
   const [selectedCategory, setSelectedCategory] = useState<Category>("all");
@@ -99,7 +117,8 @@ export default function BurgerMenuScreen() {
   // ✅ params로 들어온 name/minOrder가 바뀌면 화면에도 반영
   useEffect(() => {
     setRestaurantName(name ?? FALLBACK_RESTAURANT_NAME);
-    setMinOrderAmount(Number(minOrder ?? FALLBACK_MIN_ORDER));
+    const parsed = Number(minOrder ?? FALLBACK_MIN_ORDER);
+    setMinOrderAmount(Number.isFinite(parsed) && parsed > 0 ? parsed : FALLBACK_MIN_ORDER);
   }, [name, minOrder, restaurantId]);
 
   // ✅ 메뉴 서버에서 가져오기
@@ -112,7 +131,10 @@ export default function BurgerMenuScreen() {
       console.log("FETCH MENU =", url);
 
       const res = await fetch(url);
-      if (!res.ok) throw new Error(`GET /restaurants/${restaurantId}/menus failed: ${res.status}`);
+      if (!res.ok) {
+        const text = await res.text().catch(() => "");
+        throw new Error(`GET /restaurants/${restaurantId}/menus failed: ${res.status} ${text}`);
+      }
 
       const data: ApiMenu[] = await res.json();
 
@@ -152,7 +174,6 @@ export default function BurgerMenuScreen() {
   }, [selectedCategory, query, menuItems]);
 
   const cartCount = useMemo(() => {
-    // quantities가 EMPTY_COUNTS(고정)일 수도 있으니 안전
     return Object.values(quantities).reduce((acc, v) => acc + v, 0);
   }, [quantities]);
 
@@ -179,13 +200,16 @@ export default function BurgerMenuScreen() {
 
     Alert.alert(
       "주문 접수 완료",
-      `총 ${nextTotal.toLocaleString()}원 담겨서 주문이 접수되었어요!\n(담은 금액은 0원으로 초기화됩니다)`,
+      `총 ${nextTotal.toLocaleString()}원 담겨서 주문이 접수되었어요!\n(공동 장바구니가 초기화됩니다)`,
       [
         {
           text: "확인",
           onPress: () => {
+            // ✅ 공동 금액 초기화
             resetTotal(restaurantId);
-            resetItems(restaurantId);
+            // ✅ 해당 매장의 "모든 유저" 수량 초기화 (A/B 모두 비워짐)
+            resetRestaurantItemsForAllUsers(restaurantId);
+
             setOrderingLocked(false);
           },
         },
@@ -197,15 +221,21 @@ export default function BurgerMenuScreen() {
   const increase = (item: MenuItem) => {
     const nextTotal = total + item.price;
     addPrice(restaurantId, item.price);
-    incItem(restaurantId, item.id);
+
+    // ✅ 유저별 수량 증가
+    incItem(userKey, restaurantId, item.id);
+
     completeOrderIfNeeded(nextTotal);
   };
 
   const decrease = (item: MenuItem) => {
     const qty = quantities[item.id] ?? 0;
     if (qty <= 0) return;
+
     addPrice(restaurantId, -item.price);
-    decItem(restaurantId, item.id);
+
+    // ✅ 유저별 수량 감소
+    decItem(userKey, restaurantId, item.id);
   };
 
   return (

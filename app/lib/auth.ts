@@ -1,3 +1,4 @@
+// app/lib/auth.ts
 import { API_BASE } from "../../constants/api";
 
 type SignupInput = {
@@ -8,7 +9,7 @@ type SignupInput = {
 };
 
 type LoginInput = {
-  identifier: string; // ✅ username 또는 email
+  identifier: string; // username or email
   password: string;
 };
 
@@ -35,10 +36,10 @@ export async function signup(input: SignupInput) {
   });
 
   if (!res.ok) {
-    const msg = await parseError(res);
-    throw new Error(msg);
+    throw new Error(await parseError(res));
   }
 
+  // 서버가 user를 반환
   return res.json().catch(() => null);
 }
 
@@ -48,8 +49,8 @@ export async function login(input: LoginInput) {
   const res = await fetch(`${API_BASE}/auth/login`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    // ✅ 백엔드가 뭘 받든 되도록 다 보내기
     body: JSON.stringify({
+      // ✅ 백엔드가 무엇을 받든 호환되게 다 실어보냄
       identifier: id,
       username: id,
       email: id,
@@ -58,9 +59,9 @@ export async function login(input: LoginInput) {
   });
 
   if (!res.ok) {
-    const msg = await parseError(res);
-    throw new Error(msg);
+    throw new Error(await parseError(res));
   }
 
+  // ✅ { token, user } 기대
   return res.json().catch(() => null);
 }
