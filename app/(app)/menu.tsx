@@ -239,8 +239,11 @@ export default function BurgerMenuScreen() {
   }, [quantities]);
 
   const goBackToMap = useCallback(() => {
-    router.replace("/(tabs)");
-  }, []);
+    router.replace({
+      pathname: "/(tabs)",
+      params: { focusRid: String(restaurantId) },
+    });
+  }, [restaurantId]);
 
   useEffect(() => {
     if (Platform.OS !== "android") return;

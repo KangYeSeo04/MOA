@@ -1,6 +1,8 @@
 import * as bcrypt from "bcrypt";
-import { sign } from "jsonwebtoken";
+import jwt from "jsonwebtoken";
 import { prisma } from "../db";
+
+const { sign } = jwt;
 
 export const signup = async (
   username: string,

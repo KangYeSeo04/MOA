@@ -1,6 +1,6 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { View, StyleSheet, BackHandler, ToastAndroid, Platform } from "react-native";
-import { router, useFocusEffect } from "expo-router";
+import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 import { Map, Restaurant } from "../../components/Map";
 import { API_BASE } from "../../constants/api";
 import { SearchBar } from "../../components/SearchBar";
@@ -17,6 +17,16 @@ type ApiRestaurant = {
 export default function HomeScreen() {
   // ✅ 첫 진입 중심(모수)
   const center: [number, number] = [37.5412, 126.9962];
+
+  // ✅ menu에서 돌아올 때 받을 파라미터
+  // 예: router.push({ pathname: "/(tabs)", params: { focusRid: String(restaurantId) } })
+  const { focusRid } = useLocalSearchParams<{ focusRid?: string }>();
+
+  // focusRid -> number 변환
+  const focusRestaurantId = useMemo(() => {
+    const n = Number(focusRid);
+    return Number.isFinite(n) && n > 0 ? n : undefined;
+  }, [focusRid]);
 
   const [restaurants, setRestaurants] = useState<Restaurant[]>([]);
 
@@ -44,7 +54,6 @@ export default function HomeScreen() {
 
   const fetchRestaurants = useCallback(async () => {
     const url = `${API_BASE}/restaurants`;
-    // console.log("FETCH RESTAURANTS =", url);
 
     const res = await fetch(url);
     if (!res.ok) {
@@ -60,7 +69,6 @@ export default function HomeScreen() {
       lat: r.latitude,
       lng: r.longitude,
       minOrderAmount: r.minOrderPrice,
-      pendingPrice: r.pendingPrice, // ✅ DB 공동 장바구니 금액
       hasGroupUsers: false, // 백엔드에 없으니 임시
     }));
 
@@ -72,16 +80,14 @@ export default function HomeScreen() {
     fetchRestaurants().catch((e) => console.error("GET /restaurants ERROR =", e));
   }, [fetchRestaurants]);
 
-  // ✅ (핵심) 지도 화면에 있을 때만 주기적으로 갱신 → 다른 유저가 담은 것도 반영
+  // ✅ (핵심) 지도 화면에 있을 때만 주기적으로 갱신
   useFocusEffect(
     useCallback(() => {
       let cancelled = false;
       let timer: any = null;
 
-      // 진입하자마자 한 번 갱신
       fetchRestaurants().catch((e) => console.error("FOCUS fetchRestaurants ERROR =", e));
 
-      // 2초마다 폴링 (원하면 1~5초로 조절)
       timer = setInterval(() => {
         if (cancelled) return;
         fetchRestaurants().catch((e) => console.error("POLL fetchRestaurants ERROR =", e));
@@ -96,13 +102,13 @@ export default function HomeScreen() {
 
   return (
     <View style={styles.container}>
-      {/* 지도 */}
       <Map
         restaurants={restaurants}
         center={center}
+        focusRestaurantId={focusRestaurantId} // ✅ 추가: 이게 포인트
         onRestaurantPress={(rid) => {
           const r = restaurants.find((x) => x.id === rid);
-  
+
           router.push({
             pathname: "/menu",
             params: {
@@ -113,18 +119,16 @@ export default function HomeScreen() {
           });
         }}
       />
-  
-      {/* 🔍 네이버지도 스타일 검색바 */}
+
       <View style={styles.searchBarWrapper}>
-      <SearchBar
+        <SearchBar
           onPressSearch={() => {
-            router.push("/search");   // ✅ 여기!!
+            router.push("/search");
           }}
         />
       </View>
     </View>
   );
-  
 }
 
 const styles = StyleSheet.create({
@@ -132,10 +136,9 @@ const styles = StyleSheet.create({
 
   searchBarWrapper: {
     position: "absolute",
-    top: 52,       // 상태바 아래
+    top: 52,
     left: 15,
     right: 15,
-    zIndex: 10,    // 지도 위로
+    zIndex: 10,
   },
 });
-

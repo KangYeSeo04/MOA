@@ -16,20 +16,29 @@ interface RestaurantMapProps {
   restaurants: Restaurant[];
   center: [number, number];
   onRestaurantPress?: (restaurantId: number) => void;
+
+  // ✅ 추가: menu에서 돌아올 때 “이 식당을 중심으로” 보여주기
+  focusRestaurantId?: number;
 }
 
 /**
  * ✅ 추천 줌 레벨: 0.004 ~ 0.008
- * - 너무 확대되면 값을 키우고
- * - 너무 축소되면 값을 줄이면 됨
  */
 const DEFAULT_DELTA = 0.006;
 
-export function Map({ restaurants, center, onRestaurantPress }: RestaurantMapProps) {
+export function Map({
+  restaurants,
+  center,
+  onRestaurantPress,
+  focusRestaurantId,
+}: RestaurantMapProps) {
   const mapRef = useRef<MapView>(null);
 
-  // ✅ 첫 진입에만 center로 강제 이동 (그 이후에는 화면 상태 유지)
+  // ✅ 첫 진입에만 center로 강제 이동
   const didInitRef = useRef(false);
+
+  // ✅ focus가 바뀔 때만 이동(중복 방지)
+  const lastFocusRef = useRef<number | null>(null);
 
   const initialRegion: Region = useMemo(
     () => ({
@@ -41,6 +50,7 @@ export function Map({ restaurants, center, onRestaurantPress }: RestaurantMapPro
     [center]
   );
 
+  // 1) 첫 진입 center 이동
   useEffect(() => {
     if (!mapRef.current) return;
     if (didInitRef.current) return;
@@ -54,18 +64,36 @@ export function Map({ restaurants, center, onRestaurantPress }: RestaurantMapPro
         latitudeDelta: DEFAULT_DELTA,
         longitudeDelta: DEFAULT_DELTA,
       },
-      300
+      250
     );
   }, [center]);
 
+  // 2) ✅ focusRestaurantId가 들어오면 해당 식당으로 줌/이동
+  useEffect(() => {
+    if (!mapRef.current) return;
+    if (!focusRestaurantId) return;
+
+    // restaurants가 아직 로딩 중이면 못 찾음 → 기다렸다가 다시 시도
+    const r = restaurants.find((x) => x.id === focusRestaurantId);
+    if (!r) return;
+
+    // 같은 id로 이미 포커스했다면 다시 안 움직이게(깜빡임 방지)
+    if (lastFocusRef.current === focusRestaurantId) return;
+    lastFocusRef.current = focusRestaurantId;
+
+    mapRef.current.animateToRegion(
+      {
+        latitude: r.lat,
+        longitude: r.lng,
+        latitudeDelta: DEFAULT_DELTA,
+        longitudeDelta: DEFAULT_DELTA,
+      },
+      300
+    );
+  }, [focusRestaurantId, restaurants]);
+
   const totals = useCartStore((s) => s.totals);
 
-  /**
-   * 🎨 마커 색상
-   * - total <= 0 -> 회색
-   * - progress(0~1) 따라 연한 빨강 -> 진한 빨강
-   * - NaN/Infinity 방지 (깨지면 회색으로)
-   */
   const getMarkerColor = (restaurant: Restaurant) => {
     const total = Number(totals[restaurant.id] ?? 0);
     if (!Number.isFinite(total) || total <= 0) return "#9CA3AF";
@@ -99,7 +127,6 @@ export function Map({ restaurants, center, onRestaurantPress }: RestaurantMapPro
       rotateEnabled
       pitchEnabled
     >
-      {/* 기준 위치 표시 */}
       <Circle
         center={{ latitude: center[0], longitude: center[1] }}
         radius={60}
@@ -126,9 +153,7 @@ export function Map({ restaurants, center, onRestaurantPress }: RestaurantMapPro
             <Callout tooltip>
               <View style={styles.callout}>
                 <Text style={styles.title}>{restaurant.name}</Text>
-                <Text style={styles.meta}>
-                  최소주문금액: {Number(min).toLocaleString()}원
-                </Text>
+                <Text style={styles.meta}>최소주문금액: {Number(min).toLocaleString()}원</Text>
                 <Text style={styles.meta}>담은금액: {Number(total).toLocaleString()}원</Text>
                 <Text style={styles.meta}>남은금액: {Number(remaining).toLocaleString()}원</Text>
                 <Text style={[styles.meta, styles.hint]}>(점을 누르면 메뉴로 이동)</Text>
@@ -178,6 +203,5 @@ const styles = StyleSheet.create({
   },
 
   meta: { fontSize: 14, color: "#4B5563", marginTop: 2 },
-
   hint: { marginTop: 8, fontWeight: "700" },
 });

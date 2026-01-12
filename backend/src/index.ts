@@ -1,7 +1,6 @@
-import * as express from "express";
-import type { Request, Response } from "express";
-import * as cors from "cors";
-import * as dotenv from "dotenv";
+import express, { type Request, type Response } from "express";
+import cors from "cors";
+import dotenv from "dotenv";
 
 import authRoutes from "./routes/auth";
 import restaurantsRoutes from "./routes/restaurant";
@@ -11,10 +10,17 @@ dotenv.config();
 
 const app = express();
 
-app.use(cors());
-app.use(express.json());
-app.use("/user", userRouter);
+// CORS (팀원 PC에서 접근 실험하려면 아래처럼 열어두는 게 편함)
+app.use(
+  cors({
+    origin: true,
+    credentials: true,
+  })
+);
 
+app.use(express.json());
+
+app.use("/user", userRouter);
 
 app.get("/health", (_req: Request, res: Response) => {
   res.json({ ok: true });
@@ -25,6 +31,7 @@ app.use("/restaurants", restaurantsRoutes);
 
 const PORT = Number(process.env.PORT) || 4000;
 
-app.listen(PORT, () => {
-  console.log(`🚀 Server listening on http://localhost:${PORT}`);
+// 0.0.0.0 로 바인딩하면 같은 와이파이의 다른 PC/에뮬레이터에서도 접근 가능
+app.listen(PORT, "0.0.0.0", () => {
+  console.log(`🚀 Server listening on http://0.0.0.0:${PORT}`);
 });
