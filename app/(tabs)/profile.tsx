@@ -13,7 +13,7 @@ import { Ionicons } from "@expo/vector-icons";
 import type { ImageSourcePropType } from "react-native";
 import ProfileEdit from "../../components/ProfileEdit";
 import { router } from "expo-router";
-import { useAuthStore } from "@/stores/auth";
+import { useAuthStore } from "../../stores/auth";
 import { getToken, clearToken } from "../lib/auth";
 
 type ProfileData = {

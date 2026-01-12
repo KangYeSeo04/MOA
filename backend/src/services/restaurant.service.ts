@@ -1,8 +1,20 @@
 import { prisma } from "../db";
 
-export async function listRestaurants() {
+import { Prisma } from "@prisma/client";
+
+export async function listRestaurants(query?: string) {
+  const q = (query ?? "").trim();
+
+  const where: Prisma.RestaurantWhereInput = q
+    ? {
+        name: { contains: q }, // SQLite면 mode 없이 먼저!
+      }
+    : {};
+
   return prisma.restaurant.findMany({
+    where,
     orderBy: { id: "asc" },
+    take: 30, // ✅ 너무 많으면 제한 (원하면 숫자 조절)
     select: {
       id: true,
       name: true,

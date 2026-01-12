@@ -15,7 +15,7 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
-import { useCartStore } from "@/stores/cart";
+import { useCartStore } from "../../stores/cart";
 import { API_BASE } from "../../constants/api";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 

@@ -7,10 +7,17 @@ import {
   resetPendingPrice,
 } from "../services/restaurant.service";
 
-export async function getRestaurants(req: Request, res: Response) {
-  const restaurants = await listRestaurants();
-  res.json(restaurants);
-}
+  export async function getRestaurants(req: Request, res: Response) {
+    try {
+      const q = String(req.query.query ?? "").trim();
+      const restaurants = await listRestaurants(q); // listRestaurants가 query optional 받게 바꿨으니 OK
+      res.json(restaurants);
+    } catch (e: any) {
+      console.error(e);
+      res.status(500).json({ message: e?.message ?? "Internal Server Error" });
+    }
+  }
+  
 
 export async function getMenusByRestaurant(req: Request, res: Response) {
   const id = Number(req.params.id);

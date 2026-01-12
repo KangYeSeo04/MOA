@@ -3,6 +3,7 @@ import { View, StyleSheet, BackHandler, ToastAndroid, Platform } from "react-nat
 import { router, useFocusEffect } from "expo-router";
 import { Map, Restaurant } from "../../components/Map";
 import { API_BASE } from "../../constants/api";
+import { SearchBar } from "../../components/SearchBar";
 
 type ApiRestaurant = {
   id: number;
@@ -95,12 +96,13 @@ export default function HomeScreen() {
 
   return (
     <View style={styles.container}>
+      {/* 지도 */}
       <Map
         restaurants={restaurants}
         center={center}
         onRestaurantPress={(rid) => {
           const r = restaurants.find((x) => x.id === rid);
-
+  
           router.push({
             pathname: "/menu",
             params: {
@@ -111,10 +113,29 @@ export default function HomeScreen() {
           });
         }}
       />
+  
+      {/* 🔍 네이버지도 스타일 검색바 */}
+      <View style={styles.searchBarWrapper}>
+      <SearchBar
+          onPressSearch={() => {
+            router.push("/search");   // ✅ 여기!!
+          }}
+        />
+      </View>
     </View>
   );
+  
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
+
+  searchBarWrapper: {
+    position: "absolute",
+    top: 52,       // 상태바 아래
+    left: 15,
+    right: 15,
+    zIndex: 10,    // 지도 위로
+  },
 });
+

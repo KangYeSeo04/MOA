@@ -42,4 +42,6 @@ app-example
 /ios
 /android
 
-.envbackend/prisma/dev.db
+.env
+backend/prisma/dev.db
+backend/prisma/*.db
