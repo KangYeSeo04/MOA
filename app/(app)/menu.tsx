@@ -1,5 +1,6 @@
 // app/(app)/menu.tsx
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { ImageSourcePropType } from "react-native";
 import {
   View,
   Text,
@@ -12,6 +13,7 @@ import {
   Alert,
   BackHandler,
   Platform,
+  StatusBar,
   ActivityIndicator,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
@@ -41,15 +43,21 @@ type MenuItem = {
   name: string;
   description: string;
   price: number;
-  image: string;
+  image: ImageSourcePropType;
   category: Category;
 };
 
 const FALLBACK_RESTAURANT_NAME = "메뉴";
 const FALLBACK_MIN_ORDER = 20000;
 
-const FALLBACK_IMAGE =
-  "https://images.unsplash.com/photo-1568901346375-23c9450c58cd?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&q=80&w=1080";
+const MENU_IMAGES_BY_NAME: Record<string, any> = {
+  "영길불에 태운 도토리 국수": require("../../assets/images/dotori.png"),
+  "작은 한입들": require("../../assets/images/small.png"),
+  "우엉 타르트": require("../../assets/images/ung.png"),
+};
+
+const FALLBACK_LOCAL_IMAGE = require("../../assets/images/dotori.png");
+
 
 // ✅ selector에서 쓰는 "안정적인" 빈 객체 (레퍼런스 고정)
 const EMPTY_COUNTS: Record<string, number> = Object.freeze({});
@@ -154,14 +162,19 @@ export default function BurgerMenuScreen() {
 
       const data: ApiMenu[] = await res.json();
 
-      const mapped: MenuItem[] = data.map((m) => ({
-        id: String(m.id),
-        name: m.name,
-        description: "",
-        price: m.price,
-        image: FALLBACK_IMAGE,
-        category: "all",
-      }));
+      const mapped: MenuItem[] = data.map((m) => {
+        const idStr = String(m.id);
+      
+        return {
+          id: idStr,
+          name: m.name,
+          description: "",
+          price: m.price,
+          image: MENU_IMAGES_BY_NAME[m.name] ?? FALLBACK_LOCAL_IMAGE,
+          category: "all",
+        };
+      });
+      
 
       if (!cancelled) setMenuItems(mapped);
     })()
@@ -239,8 +252,9 @@ export default function BurgerMenuScreen() {
   }, [quantities]);
 
   const goBackToMap = useCallback(() => {
-    router.replace("/(tabs)");
+    router.back();
   }, []);
+  
 
   useEffect(() => {
     if (Platform.OS !== "android") return;
@@ -399,6 +413,8 @@ export default function BurgerMenuScreen() {
   };
 
   return (
+    <>
+    <StatusBar translucent backgroundColor="transparent" barStyle="light-content" />
     <SafeAreaView style={styles.safe}>
       {/* Header */}
       <View style={styles.header}>
@@ -481,7 +497,7 @@ export default function BurgerMenuScreen() {
 
             return (
               <View style={styles.card}>
-                <Image source={{ uri: item.image }} style={styles.thumb} />
+                <Image source={item.image} style={styles.thumb} />
                 <View style={{ flex: 1, padding: 12, gap: 6 }}>
                   <Text style={styles.itemName}>{item.name}</Text>
                   <Text style={styles.itemDesc} numberOfLines={2}>
@@ -521,20 +537,28 @@ export default function BurgerMenuScreen() {
         />
       )}
     </SafeAreaView>
+    </>
   );
 }
 
 const ORANGE = "#F97316";
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: "#F6F7F9" },
+  safe: {
+    flex: 1,
+    backgroundColor: "#F6F7F9",
+  },
+  
   center: { flex: 1, alignItems: "center", justifyContent: "center" },
 
   header: {
     backgroundColor: ORANGE,
     paddingHorizontal: 16,
     paddingBottom: 12,
-    paddingTop: Platform.OS === "android" ? 18 : 10,
+    paddingTop:
+      Platform.OS === "android"
+        ? (StatusBar.currentHeight ?? 0) + 12
+        : 48, // iOS 노치 대응
     flexDirection: "row",
     alignItems: "center",
     gap: 10,
