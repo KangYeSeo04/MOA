@@ -16,7 +16,7 @@ import {
 import Checkbox from "expo-checkbox";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
-import { useAuthStore } from "@/stores/auth";
+import { useAuthStore } from "../stores/auth";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 export default function Login() {

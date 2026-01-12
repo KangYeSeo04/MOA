@@ -14,14 +14,6 @@ interface SearchBarProps {
 export function SearchBar({ onNotificationClick }: SearchBarProps) {
   return (
     <View style={styles.container}>
-      {/* 알림 버튼 */}
-      <TouchableOpacity
-        onPress={onNotificationClick}
-        style={styles.notificationButton}
-        activeOpacity={0.7}
-      >
-        <Bell size={20} color="#374151" />
-      </TouchableOpacity>
 
       {/* 검색 입력 */}
       <View style={styles.searchWrapper}>
@@ -43,18 +35,11 @@ export function SearchBar({ onNotificationClick }: SearchBarProps) {
 
 const styles = StyleSheet.create({
     container: {
-      backgroundColor: '#FFFFFF',
       paddingHorizontal: 16,
       paddingVertical: 12,
       flexDirection: 'row',
       alignItems: 'center',
       gap: 12,
-      // shadow
-      shadowColor: '#000',
-      shadowOffset: { width: 0, height: 1 },
-      shadowOpacity: 0.08,
-      shadowRadius: 4,
-      elevation: 3, // Android
     },
     notificationButton: {
       padding: 8,
@@ -71,8 +56,8 @@ const styles = StyleSheet.create({
       zIndex: 1,
     },
     input: {
-      backgroundColor: '#F3F4F6',
-      borderRadius: 12,
+      backgroundColor: "white",
+      borderRadius: 30,
       paddingLeft: 40,
       paddingRight: 16,
       paddingVertical: 10,

@@ -1,7 +1,7 @@
 import React, { useMemo, useRef, useEffect } from "react";
 import { View, Text, StyleSheet } from "react-native";
 import MapView, { Marker, Circle, Callout, Region } from "react-native-maps";
-import { useCartStore } from "@/stores/cart";
+import { useCartStore } from "../stores/cart";
 
 export interface Restaurant {
   id: number;
