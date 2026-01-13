@@ -1,5 +1,5 @@
 // app/(tabs)/orders.tsx
-import React, { useMemo, useState } from "react";
+import React, { useCallback, useMemo, useState } from "react";
 import {
   View,
   Text,
@@ -10,19 +10,15 @@ import {
   Modal,
   SafeAreaView,
 } from "react-native";
+import { useFocusEffect } from "@react-navigation/native";
+import {
+  getOrderHistory,
+  resolveOrderUserKey,
+  type OrderHistoryEntry,
+  type OrderStatus,
+} from "../lib/orderHistory";
 
-type OrderStatus = "delivered" | "delivering" | "preparing" | "cancelled";
-
-type Order = {
-  id: string;
-  restaurantName: string;
-  restaurantImage: string;
-  items: string[];
-  totalPrice: number;
-  orderDate: string;
-  status: OrderStatus;
-  deliveryTime?: string;
-};
+type Order = OrderHistoryEntry;
 
 const STATUS_LABEL: Record<OrderStatus, string> = {
   delivered: "배달완료",
@@ -38,92 +34,51 @@ const STATUS_BADGE: Record<OrderStatus, { bg: string; fg: string }> = {
   cancelled: { bg: "#FFEBEE", fg: "#B71C1C" },
 };
 
-const MOCK_ORDERS: Order[] = [
-  {
-    id: "1",
-    restaurantName: "교촌치킨 강남점",
-    restaurantImage:
-      "https://images.unsplash.com/photo-1687966699414-095ca9c35593?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&q=80&w=1080",
-    items: ["허니콤보", "치즈볼", "콜라 1.25L"],
-    totalPrice: 28000,
-    orderDate: "2026.01.09 19:45",
-    status: "delivered",
-    deliveryTime: "20:25",
-  },
-  {
-    id: "2",
-    restaurantName: "피자헛 신논현점",
-    restaurantImage:
-      "https://images.unsplash.com/photo-1672860886897-ed3abfdd3952?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&q=80&w=1080",
-    items: ["슈퍼슈프림 L", "치즈크러스트", "감자튀김"],
-    totalPrice: 35500,
-    orderDate: "2026.01.08 18:20",
-    status: "delivered",
-    deliveryTime: "19:10",
-  },
-  {
-    id: "3",
-    restaurantName: "짜장명가",
-    restaurantImage:
-      "https://images.unsplash.com/photo-1661532842825-4fe9dce30428?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&q=80&w=1080",
-    items: ["짜장면", "짬뽕", "탕수육(소)"],
-    totalPrice: 25000,
-    orderDate: "2026.01.07 12:30",
-    status: "delivering",
-    deliveryTime: "예상 13:00",
-  },
-  {
-    id: "4",
-    restaurantName: "오마카세 스시",
-    restaurantImage:
-      "https://images.unsplash.com/photo-1582450871972-ab5ca641643d?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&q=80&w=1080",
-    items: ["연어초밥 세트", "모듬회", "우동"],
-    totalPrice: 42000,
-    orderDate: "2026.01.06 17:50",
-    status: "delivered",
-    deliveryTime: "18:35",
-  },
-  {
-    id: "5",
-    restaurantName: "맘스터치 역삼점",
-    restaurantImage:
-      "https://images.unsplash.com/photo-1687966699414-095ca9c35593?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&q=80&w=1080",
-    items: ["싸이버거 세트", "치킨너겟", "콜라"],
-    totalPrice: 13500,
-    orderDate: "2026.01.05 14:15",
-    status: "preparing",
-  },
-  {
-    id: "6",
-    restaurantName: "피자알볼로",
-    restaurantImage:
-      "https://images.unsplash.com/photo-1672860886897-ed3abfdd3952?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&q=80&w=1080",
-    items: ["고르곤졸라 피자 M"],
-    totalPrice: 18000,
-    orderDate: "2026.01.04 20:00",
-    status: "cancelled",
-  },
-];
+const ORANGE = "#f57c00";
+const FALLBACK_THUMB = require("../../assets/images/dotori.png");
 
 export default function OrdersScreen() {
+  const [orders, setOrders] = useState<Order[]>([]);
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [filter, setFilter] = useState<OrderStatus | "all">("all");
 
-  const counts = useMemo(() => {
-    const c = {
-      all: MOCK_ORDERS.length,
-      delivered: MOCK_ORDERS.filter((o) => o.status === "delivered").length,
-      delivering: MOCK_ORDERS.filter((o) => o.status === "delivering").length,
-      preparing: MOCK_ORDERS.filter((o) => o.status === "preparing").length,
-      cancelled: MOCK_ORDERS.filter((o) => o.status === "cancelled").length,
-    };
-    return c;
+  const loadOrders = useCallback(async () => {
+    try {
+      const userKey = await resolveOrderUserKey();
+      const history = await getOrderHistory(userKey);
+      setOrders(history);
+    } catch {
+      setOrders([]);
+    }
   }, []);
 
+  useFocusEffect(
+    useCallback(() => {
+      loadOrders();
+    }, [loadOrders])
+  );
+
+  const counts = useMemo(() => {
+    const c = {
+      all: orders.length,
+      delivered: orders.filter((o) => o.status === "delivered").length,
+      delivering: orders.filter((o) => o.status === "delivering").length,
+      preparing: orders.filter((o) => o.status === "preparing").length,
+      cancelled: orders.filter((o) => o.status === "cancelled").length,
+    };
+    return c;
+  }, [orders]);
+
   const filteredOrders = useMemo(() => {
-    if (filter === "all") return MOCK_ORDERS;
-    return MOCK_ORDERS.filter((o) => o.status === filter);
-  }, [filter]);
+    if (filter === "all") return orders;
+    return orders.filter((o) => o.status === filter);
+  }, [filter, orders]);
+
+  const resolveImageSource = (image?: string | number) => {
+    if (typeof image === "number") return image;
+    if (typeof image === "string" && image.trim()) return { uri: image };
+    return FALLBACK_THUMB;
+  };
 
   const filterButtons: { label: string; value: OrderStatus | "all"; count: number }[] = [
     { label: "전체", value: "all", count: counts.all },
@@ -172,7 +127,7 @@ export default function OrdersScreen() {
         contentContainerStyle={styles.list}
         renderItem={({ item }) => (
           <Pressable style={styles.card} onPress={() => setSelectedOrder(item)}>
-            <Image source={{ uri: item.restaurantImage }} style={styles.thumb} />
+            <Image source={resolveImageSource(item.restaurantImage)} style={styles.thumb} />
             <View style={styles.cardBody}>
               <View style={styles.cardTopRow}>
                 <Text style={styles.storeName} numberOfLines={1}>
@@ -232,7 +187,7 @@ export default function OrdersScreen() {
 
           {selectedOrder ? (
             <View style={styles.modalBody}>
-              <Image source={{ uri: selectedOrder.restaurantImage }} style={styles.modalImage} />
+              <Image source={resolveImageSource(selectedOrder.restaurantImage)} style={styles.modalImage} />
               <Text style={styles.modalStore}>{selectedOrder.restaurantName}</Text>
 
               <View style={styles.modalLine} />
@@ -286,7 +241,7 @@ const styles = StyleSheet.create({
   },
   filterList: { paddingHorizontal: 12, paddingVertical: 12, gap: 8 },
   pill: { paddingHorizontal: 14, paddingVertical: 10, borderRadius: 999 },
-  pillActive: { backgroundColor: "#2563EB" },
+  pillActive: { backgroundColor: ORANGE },
   pillInactive: { backgroundColor: "#F3F4F6" },
   pillText: { fontSize: 13, fontWeight: "600" },
   pillTextActive: { color: "white" },

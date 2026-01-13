@@ -21,6 +21,12 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
 import { API_BASE } from "../../constants/api"; // ✅ menu.tsx랑 동일 경로
+import {
+  appendOrderHistory,
+  formatOrderDate,
+  resolveOrderUserKey,
+  type OrderHistoryEntry,
+} from "../lib/orderHistory";
 
 type ApiMenu = {
   id: number;
@@ -57,11 +63,19 @@ const ORANGE = "#f57c00";
 
 const ADDRESS_CACHE_KEY = "profile_address_cache_v1";
 
-// ✅ menu.tsx랑 동일하게 ../../assets 경로
-const MENU_IMAGES_BY_NAME: Record<string, any> = {
-  "영길불에 태운 도토리 국수": require("../../assets/images/dotori.png"),
-  "작은 한입들": require("../../assets/images/small.png"),
-  "우엉 타르트": require("../../assets/images/ung.png"),
+// ✅ menu.tsx와 동일한 매핑 키: `${restaurantId}:${menuName}`
+const MENU_IMAGES_BY_KEY: Record<string, any> = {
+  // 모수
+  "1:영길불에 태운 도토리 국수": require("../../assets/images/dotori.png"),
+  "1:작은 한입들": require("../../assets/images/small.png"),
+  "1:우엉 타르트": require("../../assets/images/ung.png"),
+
+  // 페페스
+  "2:봉골레": require("../../assets/images/bongole.png"),
+  "2:까르보나라": require("../../assets/images/carbonara.png"),
+  "2:라구": require("../../assets/images/lagu.png"),
+  "2:앤쵸비 오일": require("../../assets/images/oil.png"),
+  "2:카치오 에 페페": require("../../assets/images/pepe.png"),
 };
 
 const FALLBACK_LOCAL_IMAGE = require("../../assets/images/dotori.png");
@@ -161,7 +175,8 @@ export default function OrderCartScreen() {
         name: m.name,
         price: m.price,
         qty: m.amountOrdered,
-        image: MENU_IMAGES_BY_NAME[m.name] ?? FALLBACK_LOCAL_IMAGE,
+        image:
+          MENU_IMAGES_BY_KEY[`${restaurantId}:${m.name}`] ?? FALLBACK_LOCAL_IMAGE,
       }));
 
     setItems(cartItems);
@@ -236,6 +251,40 @@ export default function OrderCartScreen() {
   }, [pendingPrice, deliveryTip, discount]);
 
   const canOrder = pendingPrice >= (minOrderPrice || 0) && pendingPrice > 0;
+
+  const serializeImageSource = (
+    image: ImageSourcePropType | undefined
+  ): string | number | undefined => {
+    if (!image) return undefined;
+    if (typeof image === "number") return image;
+    if (Array.isArray(image)) return undefined;
+    if (typeof image === "object" && "uri" in image) {
+      const uri = image.uri;
+      return typeof uri === "string" && uri.trim() ? uri : undefined;
+    }
+    if (typeof image === "string" && image.trim()) return image;
+    return undefined;
+  };
+
+  const buildOrderHistoryEntry = (): OrderHistoryEntry | null => {
+    if (items.length === 0) return null;
+
+    const orderItems = items.map((item) =>
+      item.qty > 1 ? `${item.name} x${item.qty}` : item.name
+    );
+
+    const thumbnail = serializeImageSource(items[0]?.image);
+
+    return {
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      restaurantName,
+      restaurantImage: thumbnail,
+      items: orderItems,
+      totalPrice: finalPay,
+      orderDate: formatOrderDate(new Date()),
+      status: "delivered",
+    };
+  };
 
   return (
     <>
@@ -396,7 +445,15 @@ export default function OrderCartScreen() {
           text: "주문하기",
           onPress: async () => {
             try {
+              const orderEntry = buildOrderHistoryEntry();
               await completeOrderOnServer();
+
+              if (orderEntry) {
+                try {
+                  const userKey = await resolveOrderUserKey();
+                  await appendOrderHistory(userKey, orderEntry);
+                } catch {}
+              }
 
               Alert.alert("주문 완료", "주문이 완료되어 장바구니가 초기화되었습니다.", [
                 {
