@@ -1,5 +1,5 @@
 // app/(tabs)/profile.tsx
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   View,
   Text,
@@ -18,6 +18,8 @@ import ProfileEdit from "../../components/ProfileEdit";
 import { router } from "expo-router";
 import { useAuthStore } from "../../stores/auth";
 import { getToken, clearToken } from "../lib/auth";
+import { useFocusEffect } from "@react-navigation/native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 type ProfileData = {
   nickname: string;
@@ -31,13 +33,18 @@ type MeResponse = {
   email: string;
   phone: string;
   nickname: string | null;
+  address: string | null;
 };
+
+const ADDRESS_CACHE_KEY = "profile_address_cache_v1";
 
 export default function ProfileScreen() {
   const authUser = useAuthStore((s) => s.user);
   const doLogout = useAuthStore((s) => s.logout);
 
   const [showEditProfile, setShowEditProfile] = useState(false);
+
+  // 대표주소 1개만 관리(요청사항)
   const [addresses, setAddresses] = useState<string[]>([]);
   const [addressModalVisible, setAddressModalVisible] = useState(false);
   const [addressInput, setAddressInput] = useState("");
@@ -60,34 +67,72 @@ export default function ProfileScreen() {
     setProfileData(derivedProfile);
   }, [derivedProfile]);
 
-  // ✅ (선택) /user/me로 최신 프로필 불러오기
-  useEffect(() => {
-    (async () => {
-      try {
-        const token = await getToken();
-        if (!token) return;
+  // ✅ 서버에서 최신 프로필(+address) 가져오기
+  const fetchMe = useCallback(async () => {
+    try {
+      const token = await getToken();
+      if (!token) return;
 
-        const res = await fetch("http://10.0.2.2:4000/user/me", {
-          headers: { Authorization: `Bearer ${token}` },
-        });
+      const res = await fetch("http://10.0.2.2:4000/user/me", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
 
-        const json = (await res.json().catch(() => null)) as any;
-        if (!res.ok) {
-          console.log("❌ /user/me failed:", json);
-          return;
-        }
-
-        const me = json as MeResponse;
-        setProfileData((prev) => ({
-          ...prev,
-          nickname: me.nickname ?? me.username,
-          userId: me.email ?? me.username,
-        }));
-      } catch (e) {
-        console.log("❌ 프로필 불러오기 실패:", e);
+      const json = await res.json().catch(() => null);
+      if (!res.ok) {
+        console.log("❌ /user/me failed:", json);
+        return;
       }
-    })();
+
+      const me = json as MeResponse;
+      // console.log("ME =", me);
+
+      setProfileData((prev) => ({
+        ...prev,
+        nickname: me.nickname ?? me.username,
+        userId: me.email ?? me.username,
+      }));
+
+      const addr = typeof me.address === "string" ? me.address.trim() : "";
+if (addr) {
+  setAddresses([addr]);
+  await AsyncStorage.setItem(ADDRESS_CACHE_KEY, addr);
+} else {
+  setAddresses([]);
+  await AsyncStorage.removeItem(ADDRESS_CACHE_KEY);
+}
+
+    } catch (e) {
+      console.log("❌ 프로필 불러오기 실패:", e);
+    }
   }, []);
+
+  // ✅ 마이페이지가 "다시 보일 때마다" 주소/프로필 다시 로드 (장바구니 갔다가 돌아와도 유지)
+  useFocusEffect(
+    useCallback(() => {
+      fetchMe();
+    }, [fetchMe])
+  );
+
+  // ✅ 주소 저장 (대표주소 1개)
+  const saveAddressToServer = async (addr: string) => {
+    const token = await getToken();
+    // console.log("TOKEN =", token);
+    if (!token) throw new Error("로그인이 필요합니다.");
+
+    const res = await fetch("http://10.0.2.2:4000/user/me", {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ address: addr }),
+    });
+
+    const json = await res.json().catch(() => null);
+    if (!res.ok) throw new Error(json?.message ?? "주소 저장 실패");
+
+    return json as MeResponse; // updated user
+  };
 
   const onLogoutPress = () => {
     Alert.alert("로그아웃", "로그아웃할까요?", [
@@ -187,74 +232,86 @@ export default function ProfileScreen() {
           />
         </CardSection>
 
-        {/* ✅ 주소 정보 (요청: 주소관리 복구) */}
+        {/* ✅ 주소 정보 */}
         <CardSection title="주소 정보">
           <MenuRow
             title="주소관리"
             rightIcon="add-outline"
             onPress={() => {
               setEditingIndex(null);
-              setAddressInput("");
+              setAddressInput(addresses[0] ?? "");
               setAddressModalVisible(true);
             }}
           />
 
-
           {/* ✅ 등록된 주소 리스트 */}
           {addresses.length > 0 && (
-  <View style={{ marginTop: 10, gap: 10 }}>
-    {addresses.map((addr, idx) => (
-      <View key={`${addr}-${idx}`} style={styles.addressCard}>
-        <Ionicons name="location-outline" size={18} color="#6B7280" />
+            <View style={{ marginTop: 10, gap: 10 }}>
+              {addresses.map((addr, idx) => (
+                <View key={`${addr}-${idx}`} style={styles.addressCard}>
+                  <Ionicons name="location-outline" size={18} color="#6B7280" />
 
-        <Text style={styles.addressText} numberOfLines={2}>
-          {addr}
-        </Text>
+                  <Text style={styles.addressText} numberOfLines={2}>
+                    {addr}
+                  </Text>
 
-        {/* ✅ 오른쪽 끝: 수정/삭제 */}
-        <View style={styles.addressActions}>
-          <Pressable
-            onPress={() => {
-              setEditingIndex(idx);
-              setAddressInput(addr);
-              setAddressModalVisible(true);
-            }}
-            style={({ pressed }) => [
-              styles.addressActionBtn,
-              pressed && styles.pressed,
-            ]}
-          >
-            <Text style={styles.addressActionText}>수정</Text>
-          </Pressable>
+                  {/* ✅ 오른쪽 끝: 수정/삭제 */}
+                  <View style={styles.addressActions}>
+                    <Pressable
+                      onPress={() => {
+                        setEditingIndex(idx);
+                        setAddressInput(addr);
+                        setAddressModalVisible(true);
+                      }}
+                      style={({ pressed }) => [
+                        styles.addressActionBtn,
+                        pressed && styles.pressed,
+                      ]}
+                    >
+                      <Text style={styles.addressActionText}>수정</Text>
+                    </Pressable>
 
-          <Pressable
-            onPress={() => {
-              Alert.alert("삭제", "이 주소를 삭제할까요?", [
-                { text: "취소", style: "cancel" },
-                {
-                  text: "삭제",
-                  style: "destructive",
-                  onPress: () => {
-                    setAddresses((prev) => prev.filter((_, i) => i !== idx));
-                  },
-                },
-              ]);
-            }}
-            style={({ pressed }) => [
-              styles.addressActionBtn,
-              pressed && styles.pressed,
-            ]}
-          >
-            <Text style={styles.addressActionText}>삭제</Text>
-          </Pressable>
-        </View>
-      </View>
-    ))}
-  </View>
-)}
-
+                    <Pressable
+                      onPress={() => {
+                        Alert.alert("삭제", "이 주소를 삭제할까요?", [
+                          { text: "취소", style: "cancel" },
+                          {
+                            text: "삭제",
+                            style: "destructive",
+                            onPress: async () => {
+                              // ✅ 대표주소 1개만 관리: 서버에도 null로 저장
+                              try {
+                                const token = await getToken();
+                                if (token) {
+                                  await fetch("http://10.0.2.2:4000/user/me", {
+                                    method: "PATCH",
+                                    headers: {
+                                      "Content-Type": "application/json",
+                                      Authorization: `Bearer ${token}`,
+                                    },
+                                    body: JSON.stringify({ address: null }),
+                                  });
+                                }
+                              } catch {}
+                              setAddresses([]);
+                              await AsyncStorage.removeItem(ADDRESS_CACHE_KEY);
+                            },
+                          },
+                        ]);
+                      }}
+                      style={({ pressed }) => [
+                        styles.addressActionBtn,
+                        pressed && styles.pressed,
+                      ]}
+                    >
+                      <Text style={styles.addressActionText}>삭제</Text>
+                    </Pressable>
+                  </View>
+                </View>
+              ))}
+            </View>
+          )}
         </CardSection>
-
 
         {/* ✅ 고객센터 */}
         <CardSection title="고객센터">
@@ -263,7 +320,7 @@ export default function ProfileScreen() {
         </CardSection>
       </View>
 
-      {/* ✅ 로그아웃 버튼: UI 맨 아래 + 주황 */}
+      {/* ✅ 로그아웃 버튼 */}
       <View style={styles.logoutWrap}>
         <Pressable
           onPress={onLogoutPress}
@@ -272,8 +329,9 @@ export default function ProfileScreen() {
           <Text style={styles.logoutText}>로그아웃</Text>
         </Pressable>
       </View>
-            {/* ✅ 주소 추가 모달 */}
-            <Modal
+
+      {/* ✅ 주소 추가/수정 모달 */}
+      <Modal
         visible={addressModalVisible}
         transparent
         animationType="fade"
@@ -281,12 +339,9 @@ export default function ProfileScreen() {
       >
         <View style={styles.modalBackdrop}>
           <View style={styles.modalCard}>
-          <Text style={styles.modalTitle}>
-            {editingIndex === null ? "주소 추가" : "주소 수정"}
-          </Text>
-          <Text style={styles.modalSubmitText}>
-            {editingIndex === null ? "주소 등록" : "수정하기"}
-          </Text>
+            <Text style={styles.modalTitle}>
+              {editingIndex === null ? "주소 추가" : "주소 수정"}
+            </Text>
 
             <TextInput
               placeholder="상세 주소작성"
@@ -297,41 +352,39 @@ export default function ProfileScreen() {
             />
 
             <Pressable
-              style={({ pressed }) => [
-                styles.modalSubmitBtn,
-                pressed && styles.pressed,
-              ]}
-              onPress={() => {
+              style={({ pressed }) => [styles.modalSubmitBtn, pressed && styles.pressed]}
+              onPress={async () => {
                 const trimmed = addressInput.trim();
                 if (!trimmed) {
                   Alert.alert("안내", "상세 주소를 입력해주세요.");
                   return;
                 }
-              
-                if (editingIndex === null) {
-                  // ✅ 새 주소 추가
-                  setAddresses((prev) => [trimmed, ...prev]);
-                } else {
-                  // ✅ 기존 주소 수정
-                  setAddresses((prev) =>
-                    prev.map((v, i) => (i === editingIndex ? trimmed : v))
-                  );
+
+                try {
+                  const updated = await saveAddressToServer(trimmed);
+
+                  // ✅ 서버 응답값 기준으로 UI 반영
+                  const addr = typeof updated.address === "string" ? updated.address.trim() : trimmed;
+                  setAddresses(addr ? [addr] : []);
+
+                  if (addr) await AsyncStorage.setItem(ADDRESS_CACHE_KEY, addr);
+                  else await AsyncStorage.removeItem(ADDRESS_CACHE_KEY);
+
+                  setAddressModalVisible(false);
+                  setAddressInput("");
+                  setEditingIndex(null);
+                } catch (e: any) {
+                  Alert.alert("오류", e?.message ?? "주소 저장 실패");
                 }
-              
-                setAddressInput("");
-                setEditingIndex(null);
-                setAddressModalVisible(false);
               }}
-              
             >
-              <Text style={styles.modalSubmitText}>주소 등록</Text>
+              <Text style={styles.modalSubmitText}>
+                {editingIndex === null ? "주소 등록" : "수정하기"}
+              </Text>
             </Pressable>
 
             <Pressable
-              style={({ pressed }) => [
-                styles.modalCancelBtn,
-                pressed && styles.pressed,
-              ]}
+              style={({ pressed }) => [styles.modalCancelBtn, pressed && styles.pressed]}
               onPress={() => {
                 setAddressInput("");
                 setEditingIndex(null);
@@ -343,7 +396,6 @@ export default function ProfileScreen() {
           </View>
         </View>
       </Modal>
-
     </ScrollView>
   );
 }
@@ -398,7 +450,6 @@ function MenuRow({
     </Pressable>
   );
 }
-
 
 /* ---------- Styles ---------- */
 
@@ -487,7 +538,7 @@ const styles = StyleSheet.create({
 
   logoutWrap: { paddingHorizontal: 24, marginTop: 24 },
   logoutBtn: {
-    backgroundColor: ORANGE, // ✅ 주황
+    backgroundColor: ORANGE,
     borderRadius: 14,
     paddingVertical: 16,
     alignItems: "center",
@@ -497,92 +548,90 @@ const styles = StyleSheet.create({
 
   pressed: { opacity: 0.85 },
 
-    // ✅ 주소 카드
-    addressCard: {
-      flexDirection: "row",
-      alignItems: "center",
-      gap: 10,
-      backgroundColor: "#F9FAFB",
-      borderRadius: 12,
-      paddingVertical: 12,
-      paddingHorizontal: 12,
-      borderWidth: 1,
-      borderColor: "#E5E7EB",
-    },
-    addressText: {
-      flex: 1,
-      fontSize: 14,
-      color: "#111827",
-      fontWeight: "600",
-    },
-  
-    // ✅ 모달
-    modalBackdrop: {
-      flex: 1,
-      backgroundColor: "rgba(0,0,0,0.4)",
-      justifyContent: "center",
-      paddingHorizontal: 24,
-    },
-    modalCard: {
-      backgroundColor: "#FFFFFF",
-      borderRadius: 18,
-      padding: 18,
-    },
-    modalTitle: {
-      fontSize: 18,
-      fontWeight: "900",
-      color: "#111827",
-      marginBottom: 12,
-    },
-    modalInput: {
-      borderWidth: 1,
-      borderColor: "#E5E7EB",
-      borderRadius: 12,
-      paddingHorizontal: 12,
-      paddingVertical: 12,
-      fontSize: 14,
-      color: "#111827",
-      backgroundColor: "#F9FAFB",
-      marginBottom: 12,
-    },
-    modalSubmitBtn: {
-      backgroundColor: ORANGE,
-      borderRadius: 14,
-      paddingVertical: 14,
-      alignItems: "center",
-      justifyContent: "center",
-    },
-    modalSubmitText: { color: "#FFFFFF", fontSize: 15, fontWeight: "900" },
-  
-    modalCancelBtn: {
-      marginTop: 10,
-      borderRadius: 14,
-      paddingVertical: 12,
-      alignItems: "center",
-      justifyContent: "center",
-      backgroundColor: "#F3F4F6",
-    },
-    modalCancelText: { color: "#374151", fontSize: 14, fontWeight: "800" },
+  // ✅ 주소 카드
+  addressCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    backgroundColor: "#F9FAFB",
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+  },
+  addressText: {
+    flex: 1,
+    fontSize: 14,
+    color: "#111827",
+    fontWeight: "600",
+  },
 
-    addressActions: {
-      flexDirection: "row",
-      gap: 8,
-    },
-    
-    addressActionBtn: {
-      paddingHorizontal: 14,
-      paddingVertical: 8,
-      borderRadius: 999,
-      borderWidth: 1,
-      borderColor: "#D1D5DB",
-      backgroundColor: "#FFFFFF",
-    },
-    
-    addressActionText: {
-      fontSize: 13,
-      fontWeight: "800",
-      color: "#111827",
-    },
-    
-  
+  addressActions: {
+    flexDirection: "row",
+    gap: 8,
+  },
+
+  addressActionBtn: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: "#D1D5DB",
+    backgroundColor: "#FFFFFF",
+  },
+
+  addressActionText: {
+    fontSize: 13,
+    fontWeight: "800",
+    color: "#111827",
+  },
+
+  // ✅ 모달
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.4)",
+    justifyContent: "center",
+    paddingHorizontal: 24,
+  },
+  modalCard: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 18,
+    padding: 18,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: "900",
+    color: "#111827",
+    marginBottom: 12,
+  },
+  modalInput: {
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    fontSize: 14,
+    color: "#111827",
+    backgroundColor: "#F9FAFB",
+    marginBottom: 12,
+  },
+  modalSubmitBtn: {
+    backgroundColor: ORANGE,
+    borderRadius: 14,
+    paddingVertical: 14,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  modalSubmitText: { color: "#FFFFFF", fontSize: 15, fontWeight: "900" },
+
+  modalCancelBtn: {
+    marginTop: 10,
+    borderRadius: 14,
+    paddingVertical: 12,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#F3F4F6",
+  },
+  modalCancelText: { color: "#374151", fontSize: 14, fontWeight: "800" },
 });

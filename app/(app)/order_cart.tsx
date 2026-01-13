@@ -1,6 +1,10 @@
 // app/(app)/order_cart.tsx
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ImageSourcePropType } from "react-native";
+import { getToken } from "../lib/auth";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { useFocusEffect } from "@react-navigation/native";
+
 import {
   View,
   Text,
@@ -40,7 +44,18 @@ type CartItem = {
   image: ImageSourcePropType;
 };
 
+type MeResponse = {
+  id: number;
+  username: string;
+  email: string;
+  phone: string;
+  nickname: string | null;
+  address: string | null;
+};
+
 const ORANGE = "#f57c00";
+
+const ADDRESS_CACHE_KEY = "profile_address_cache_v1";
 
 // ✅ menu.tsx랑 동일하게 ../../assets 경로
 const MENU_IMAGES_BY_NAME: Record<string, any> = {
@@ -60,6 +75,8 @@ export default function OrderCartScreen() {
   const [items, setItems] = useState<CartItem[]>([]);
   const [pendingPrice, setPendingPrice] = useState<number>(0);
   const [minOrderPrice, setMinOrderPrice] = useState<number>(0);
+  const [address, setAddress] = useState<string>("");
+
 
   // 폴링 정지 플래그
   const pollingDeadRef = useRef(false);
@@ -67,38 +84,43 @@ export default function OrderCartScreen() {
   // ----------------------------
   // 서버 API
   // ----------------------------
-  const patchPendingPrice = async (delta: number) => {
-    const res = await fetch(`${API_BASE}/restaurants/${restaurantId}/pendingPrice`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ delta }),
-    });
-
-    if (!res.ok) {
-      const text = await res.text().catch(() => "");
-      throw new Error(`pendingPrice update failed: ${res.status} ${text}`);
-    }
-
-    const st = (await res.json().catch(() => null)) as RestaurantState | null;
-    if (st && typeof st.pendingPrice === "number") setPendingPrice(st.pendingPrice);
-    if (st && typeof st.minOrderPrice === "number") setMinOrderPrice(st.minOrderPrice);
-  };
-
-  const patchMenuAmountOrdered = async (menuId: number, delta: number) => {
-    const res = await fetch(
-      `${API_BASE}/restaurants/${restaurantId}/menus/${menuId}/amountOrdered`,
-      {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ delta }),
+  const fetchMyAddress = useCallback(async () => {
+    // 1) 캐시 먼저 표시
+    try {
+      const cached = await AsyncStorage.getItem(ADDRESS_CACHE_KEY);
+      if (cached && cached.trim()) setAddress(cached.trim());
+    } catch {}
+  
+    // 2) 서버에서 최신값(가능하면) 갱신
+    try {
+      const token = await getToken();
+      if (!token) return;
+  
+      const res = await fetch(`${API_BASE}/user/me`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+  
+      const json = await res.json().catch(() => null);
+      if (!res.ok) return;
+  
+      const me = json as MeResponse;
+      const addr = typeof me.address === "string" ? me.address.trim() : "";
+  
+      if (addr) {
+        setAddress(addr);
+        await AsyncStorage.setItem(ADDRESS_CACHE_KEY, addr);
+      } else {
+        setAddress("");
+        await AsyncStorage.removeItem(ADDRESS_CACHE_KEY);
       }
-    );
+    } catch {}
+  }, [API_BASE]);
 
-    if (!res.ok) {
-      const text = await res.text().catch(() => "");
-      throw new Error(`amountOrdered update failed: ${res.status} ${text}`);
-    }
-  };
+  useFocusEffect(
+    useCallback(() => {
+      fetchMyAddress();
+    }, [fetchMyAddress])
+  );
 
   const completeOrderOnServer = async () => {
     const res = await fetch(`${API_BASE}/restaurants/${restaurantId}/complete`, {
@@ -162,7 +184,7 @@ export default function OrderCartScreen() {
     (async () => {
       try {
         setLoading(true);
-        await Promise.all([fetchCart(), fetchState()]);
+        await Promise.all([fetchCart(), fetchState(), fetchMyAddress()]);
       } catch (e: any) {
         Alert.alert("오류", e?.message ?? "장바구니 불러오기 실패");
       } finally {
@@ -201,43 +223,7 @@ export default function OrderCartScreen() {
   // ----------------------------
   // 수량 조절 (DB/금액 동기화)
   // ----------------------------
-  const increase = async (item: CartItem) => {
-    try {
-      // UI 선반영
-      setItems((prev) =>
-        prev.map((it) => (it.id === item.id ? { ...it, qty: it.qty + 1 } : it))
-      );
-      setPendingPrice((p) => p + item.price);
-
-      await patchPendingPrice(+item.price);
-      await patchMenuAmountOrdered(Number(item.id), +1);
-    } catch (e: any) {
-      Alert.alert("오류", e?.message ?? "추가 실패");
-      await Promise.all([fetchCart().catch(() => {}), fetchState().catch(() => {})]);
-    }
-  };
-
-  const decreaseOrDelete = async (item: CartItem) => {
-    if (item.qty <= 0) return;
-
-    try {
-      const nextQty = item.qty - 1;
-
-      // UI 선반영
-      setItems((prev) =>
-        nextQty === 0
-          ? prev.filter((it) => it.id !== item.id)
-          : prev.map((it) => (it.id === item.id ? { ...it, qty: nextQty } : it))
-      );
-      setPendingPrice((p) => Math.max(0, p - item.price));
-
-      await patchPendingPrice(-item.price);
-      await patchMenuAmountOrdered(Number(item.id), -1);
-    } catch (e: any) {
-      Alert.alert("오류", e?.message ?? "감소 실패");
-      await Promise.all([fetchCart().catch(() => {}), fetchState().catch(() => {})]);
-    }
-  };
+  
 
   // ----------------------------
   // 결제 요약 (지금은 배달팁/할인 0)
@@ -318,30 +304,64 @@ export default function OrderCartScreen() {
             // ✅ 결제확인(payBox)만 스크롤 끝에서 보이게!
             ListFooterComponent={
               items.length === 0 ? null : (
-                <View style={{ marginTop: 12, marginBottom: 12 }}>
+                <View style={{ marginTop: 12, marginBottom: 12, gap: 12 }}>
+                  {/* ✅ 주소 확인 */}
+                  <View style={styles.addressBox}>
+                    <View style={styles.addressHeader}>
+                      <Text style={styles.addressTitle}>주소를 확인해주세요</Text>
+            
+                      <Pressable
+                        onPress={() => {
+                          // 원하는 방식으로 이동/수정 가능
+                          // 예: 주소 수정 페이지로 이동
+                          // router.push({ pathname: "/address_edit", params: { rid: String(restaurantId) } });
+                          Alert.alert("주소 변경", "주소 변경 화면으로 이동하게 연결하면 됩니다!");
+                        }}
+                        hitSlop={10}
+                        style={styles.addressEditBtn}
+                      >
+                        <Text style={styles.addressEditText}>변경</Text>
+                      </Pressable>
+                    </View>
+            
+                    <View style={styles.addressRow}>
+                      <Ionicons name="location-outline" size={18} color="#111827" />
+                      <Text style={styles.addressText} numberOfLines={2}>
+                        {address
+                          ? address
+                          : "주소가 등록되어 있지 않아요. 마이페이지에서 주소를 등록해주세요."}
+                      </Text>
+
+                    </View>
+            
+                    <Text style={styles.addressHint}>
+                      정확한 주소를 입력하면 배달이 더 빨라요.
+                    </Text>
+                  </View>
+            
+                  {/* ✅ 결제확인 */}
                   <View style={styles.payBox}>
                     <Text style={styles.payTitle}>결제금액을 확인해주세요</Text>
-
+            
                     <View style={styles.payRow}>
                       <Text style={styles.payLabel}>메뉴 금액</Text>
                       <Text style={styles.payValue}>{pendingPrice.toLocaleString()}원</Text>
                     </View>
-
+            
                     <View style={styles.payRow}>
                       <Text style={styles.payLabel}>배달팁</Text>
                       <Text style={styles.payValue}>{deliveryTip.toLocaleString()}원</Text>
                     </View>
-
+            
                     <View style={styles.dash} />
-
+            
                     <View style={styles.payRow}>
                       <Text style={styles.payLabelStrong}>총 할인받은 금액</Text>
                       <Text style={styles.payDiscount}>-{discount.toLocaleString()}원</Text>
                     </View>
-
-
+            
                     <View style={styles.hr} />
-
+            
                     <View style={styles.payRow}>
                       <Text style={styles.payFinalLabel}>결제예정금액</Text>
                       <Text style={styles.payFinalValue}>{finalPay.toLocaleString()}원</Text>
@@ -350,6 +370,7 @@ export default function OrderCartScreen() {
                 </View>
               )
             }
+            
           />
         )}
 
@@ -573,4 +594,49 @@ const styles = StyleSheet.create({
   orderBtnDisabled: { backgroundColor: "#E5E7EB" },
   orderBtnText: { color: "white", fontSize: 15, fontWeight: "900" },
   orderBtnTextDisabled: { color: "#9CA3AF" },
+
+  addressBox: {
+    backgroundColor: "white",
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    padding: 16,
+  },
+  addressHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 10,
+  },
+  addressTitle: { fontSize: 16, fontWeight: "900", color: "#111827" },
+  
+  addressEditBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    backgroundColor: "white",
+  },
+  addressEditText: { fontSize: 13, fontWeight: "900", color: ORANGE },
+  
+  addressRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 8,
+  },
+  addressText: {
+    flex: 1,
+    fontSize: 14,
+    fontWeight: "800",
+    color: "#111827",
+    lineHeight: 20,
+  },
+  addressHint: {
+    marginTop: 8,
+    fontSize: 12,
+    color: "#6B7280",
+    fontWeight: "700",
+  },
+  
 });

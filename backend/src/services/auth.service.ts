@@ -1,5 +1,5 @@
 import * as bcrypt from "bcrypt";
-import jwt from "jsonwebtoken";
+import * as jwt from "jsonwebtoken";
 import { prisma } from "../db";
 
 const { sign } = jwt;

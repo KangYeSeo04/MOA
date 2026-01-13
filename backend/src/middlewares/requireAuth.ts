@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from "express";
-import * as jwt from "jsonwebtoken";
+import jwt from "jsonwebtoken";
 
 export interface AuthedRequest extends Request {
   userId?: number;
@@ -7,14 +7,28 @@ export interface AuthedRequest extends Request {
 
 export function requireAuth(req: AuthedRequest, res: Response, next: NextFunction) {
   const auth = req.headers.authorization;
-  if (!auth?.startsWith("Bearer ")) return res.status(401).json({ message: "No token" });
+
+  console.log("AUTH =", auth);
+  console.log("JWT_SECRET =", process.env.JWT_SECRET);
+
+  if (!auth?.startsWith("Bearer ")) {
+    return res.status(401).json({ message: "No token" });
+  }
 
   try {
-    const token = auth.slice("Bearer ".length);
-    const decoded = jwt.verify(token, process.env.JWT_SECRET!) as { userId: number };
+    const token = auth.slice("Bearer ".length).trim();
+    const secret = process.env.JWT_SECRET; // ✅ ! 쓰지 말자
+    if (!secret) {
+      console.log("❌ JWT_SECRET missing");
+      return res.status(500).json({ message: "Server auth misconfigured" });
+    }
+
+    const decoded = jwt.verify(token, secret) as { userId: number };
     req.userId = decoded.userId;
     next();
-  } catch {
+  } catch (e) {
+    console.log("❌ verify failed:", e);
     return res.status(401).json({ message: "Invalid token" });
   }
 }
+
