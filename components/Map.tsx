@@ -7,6 +7,7 @@ import React, {
 } from "react";
 import { View, Text, StyleSheet } from "react-native";
 import MapView, { Marker, Circle, Callout, Region } from "react-native-maps";
+import Svg, { Circle as SvgCircle, Path } from "react-native-svg";
 import { useCartStore } from "../stores/cart";
 
 export interface Restaurant {
@@ -35,6 +36,38 @@ interface RestaurantMapProps {
  * ✅ 추천 줌 레벨: 0.004 ~ 0.008
  */
 const DEFAULT_DELTA = 0.006;
+const PIN_SIZE = 34;
+const MAP_STYLE = [
+  { elementType: "geometry", stylers: [{ color: "#fff4e6" }] },
+  { elementType: "labels.icon", stylers: [{ visibility: "off" }] },
+  { elementType: "labels.text.fill", stylers: [{ color: "#7c2d12" }] },
+  { elementType: "labels.text.stroke", stylers: [{ color: "#ffffff" }, { weight: 2 }] },
+  { featureType: "administrative", elementType: "labels.text.fill", stylers: [{ color: "#92400e" }] },
+  { featureType: "landscape", elementType: "geometry", stylers: [{ color: "#ffe9d0" }] },
+  { featureType: "poi", elementType: "geometry", stylers: [{ color: "#ffe3c4" }] },
+  { featureType: "poi", elementType: "labels.text.fill", stylers: [{ color: "#9a3412" }] },
+  { featureType: "landscape.natural", elementType: "geometry", stylers: [{ color: "#cdeccd" }] },
+  { featureType: "landscape.natural.landcover", elementType: "geometry", stylers: [{ color: "#cdeccd" }] },
+  { featureType: "landscape.natural.terrain", elementType: "geometry", stylers: [{ color: "#cdeccd" }] },
+  { featureType: "landscape.natural", elementType: "labels.text.fill", stylers: [{ color: "#15803d" }] },
+  { featureType: "poi.park", elementType: "geometry", stylers: [{ color: "#cdeccd" }] },
+  { featureType: "poi.park", elementType: "labels.text.fill", stylers: [{ color: "#15803d" }] },
+  { featureType: "road", elementType: "geometry", stylers: [{ color: "#ffffff" }] },
+  { featureType: "road", elementType: "geometry.stroke", stylers: [{ color: "#e5e7eb" }] },
+  { featureType: "road", elementType: "labels.text.fill", stylers: [{ color: "#7c2d12" }] },
+  { featureType: "road.arterial", elementType: "geometry", stylers: [{ color: "#ffffff" }] },
+  { featureType: "road.arterial", elementType: "geometry.stroke", stylers: [{ color: "#e5e7eb" }] },
+  { featureType: "road.local", elementType: "geometry", stylers: [{ color: "#ffffff" }] },
+  { featureType: "road.local", elementType: "geometry.stroke", stylers: [{ color: "#e5e7eb" }] },
+  { featureType: "road.highway", elementType: "geometry", stylers: [{ color: "#ffffff" }] },
+  { featureType: "road.highway", elementType: "geometry.stroke", stylers: [{ color: "#e5e7eb" }] },
+  { featureType: "road.highway", elementType: "labels.text.fill", stylers: [{ color: "#7c2d12" }] },
+  { featureType: "road.highway.controlled_access", elementType: "geometry", stylers: [{ color: "#ffffff" }] },
+  { featureType: "transit.line", elementType: "geometry", stylers: [{ color: "#fed7aa" }] },
+  { featureType: "transit.station", elementType: "labels.text.fill", stylers: [{ color: "#b45309" }] },
+  { featureType: "water", elementType: "geometry", stylers: [{ color: "#93c5fd" }] },
+  { featureType: "water", elementType: "labels.text.fill", stylers: [{ color: "#2563eb" }] },
+];
 
 export const Map = forwardRef<MapHandle, RestaurantMapProps>(
   ({ restaurants, center, onRestaurantPress, focusRestaurantId }, ref) => {
@@ -138,6 +171,7 @@ export const Map = forwardRef<MapHandle, RestaurantMapProps>(
         ref={mapRef}
         style={styles.map}
         initialRegion={initialRegion}
+        customMapStyle={MAP_STYLE}
         showsCompass={false}
         showsMyLocationButton={false}
         toolbarEnabled={false}
@@ -165,10 +199,18 @@ export const Map = forwardRef<MapHandle, RestaurantMapProps>(
             <Marker
               key={restaurant.id}
               coordinate={{ latitude: restaurant.lat, longitude: restaurant.lng }}
-              anchor={{ x: 0.5, y: 0.5 }}
+              anchor={{ x: 0.5, y: 1 }}
               onPress={() => onRestaurantPress?.(restaurant.id)}
             >
-              <View style={[styles.marker, { backgroundColor: color }]} />
+              <View style={styles.pinWrap}>
+                <Svg width={PIN_SIZE} height={PIN_SIZE} viewBox="0 0 24 24">
+                  <Path
+                    d="M12 2C8.134 2 5 5.134 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.866-3.134-7-7-7z"
+                    fill={color}
+                  />
+                  <SvgCircle cx="12" cy="9" r="3.5" fill="#ffffff" />
+                </Svg>
+              </View>
               <Callout tooltip>
                 <View style={styles.callout}>
                   <Text style={styles.title}>{restaurant.name}</Text>
@@ -197,17 +239,14 @@ Map.displayName = "Map";
 const styles = StyleSheet.create({
   map: { width: "100%", height: "100%" },
 
-  marker: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    borderWidth: 3,
-    borderColor: "#FFFFFF",
+  pinWrap: {
+    alignItems: "center",
+    justifyContent: "center",
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 6,
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 5,
   },
 
   callout: {

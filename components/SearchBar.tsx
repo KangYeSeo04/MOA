@@ -39,6 +39,8 @@ const styles = StyleSheet.create({
       flexDirection: 'row',
       alignItems: 'center',
       gap: 12,
+      paddingTop: 30,
+      
     },
     notificationButton: {
       padding: 8,

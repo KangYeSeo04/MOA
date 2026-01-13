@@ -54,6 +54,11 @@ export default function ProfileScreen() {
   const [addressInput, setAddressInput] = useState("");
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
 
+  // ✅ 쿠폰 모달
+  const [couponModalVisible, setCouponModalVisible] = useState(false);
+  const [couponCode, setCouponCode] = useState("");
+
+
   // ✅ authStore 기반으로 우선 표시
   const derivedProfile = useMemo<ProfileData>(() => {
     const nickname = authUser?.nickname ?? authUser?.username ?? "사용자";
@@ -217,7 +222,10 @@ export default function ProfileScreen() {
             <OrangeIconButton
               label="쿠폰함"
               iconName="pricetags-outline"
-              onPress={() => Alert.alert("TODO", "쿠폰함")}
+              onPress={() => {
+                setCouponCode("");
+                setCouponModalVisible(true);
+              }}
             />
             <OrangeIconButton
               label="찜"
@@ -233,12 +241,78 @@ export default function ProfileScreen() {
         </View>
       </View>
 
+      {/* ✅ 쿠폰함 모달 */}
+<Modal
+  visible={couponModalVisible}
+  transparent
+  animationType="fade"
+  onRequestClose={() => setCouponModalVisible(false)}
+>
+  <View style={styles.modalBackdrop}>
+    <View style={styles.couponModalCard}>
+      <Text style={styles.couponModalTitle}>쿠폰함</Text>
+
+      {/* 상단: 쿠폰 코드 입력(검색바 느낌) */}
+      <View style={styles.couponInputRow}>
+        <View style={styles.couponInputWrap}>
+          <Ionicons name="search-outline" size={18} color="#9CA3AF" />
+          <TextInput
+            value={couponCode}
+            onChangeText={setCouponCode}
+            placeholder="쿠폰 코드를 입력하세요"
+            placeholderTextColor="#9CA3AF"
+            autoCapitalize="characters"
+            style={styles.couponInput}
+            returnKeyType="done"
+          />
+        </View>
+
+        <Pressable
+          style={({ pressed }) => [
+            styles.couponAddBtn,
+            pressed && styles.pressed,
+            !couponCode.trim() && { opacity: 0.5 },
+          ]}
+          disabled={!couponCode.trim()}
+          onPress={() => {
+            // ✅ 지금은 UI만: 추후 서버 연동 시 여기서 등록 API 호출
+            Alert.alert("쿠폰 등록", `"${couponCode.trim()}" 쿠폰을 등록할게요! (TODO)`);
+            setCouponCode("");
+          }}
+        >
+          <Text style={styles.couponAddBtnText}>등록</Text>
+        </Pressable>
+      </View>
+
+      {/* 아래: 등록된 쿠폰 없음 */}
+      <View style={styles.couponEmptyWrap}>
+        <View style={styles.couponSticker}>
+          <Ionicons name="pricetag" size={22} color={ORANGE} />
+        </View>
+
+        <Text style={styles.couponEmptyTitle}>등록된 쿠폰이 없어요</Text>
+        <Text style={styles.couponEmptyDesc}>
+          위에 쿠폰 코드를 입력해서{"\n"}쿠폰을 등록해보세요.
+        </Text>
+      </View>
+
+      <Pressable
+        style={({ pressed }) => [styles.couponCloseBtn, pressed && styles.pressed]}
+        onPress={() => setCouponModalVisible(false)}
+      >
+        <Text style={styles.couponCloseText}>닫기</Text>
+      </Pressable>
+    </View>
+  </View>
+</Modal>
+
+
       {/* 카드 리스트 영역 */}
       <View style={styles.listWrap}>
         {/* ✅ 주문 정보 */}
         <CardSection title="주문 정보">
-          <MenuRow title="장바구니" onPress={() => Alert.alert("TODO", "장바구니")} />
-          <MenuRow title="주문내역" onPress={() => Alert.alert("TODO", "주문내역")} />
+          <MenuRow title="장바구니" onPress={() => router.push("/order_cart")} />
+          <MenuRow title="주문내역" onPress={() => router.push("/orders")} />
         </CardSection>
 
         {/* ✅ 결제 정보 */}
@@ -484,7 +558,7 @@ const styles = StyleSheet.create({
   },
   avatar: { width: "100%", height: "100%" },
 
-  nickname: { fontSize: 20, fontWeight: "800", color: "#111827", marginBottom: 6 },
+  nickname: { fontSize: 20, fontWeight: "900", color: "#111827", marginBottom: 6 },
   userId: { fontSize: 12, color: "#6B7280", marginBottom: 12 },
 
   pillBtn: {
@@ -501,7 +575,8 @@ const styles = StyleSheet.create({
   softDivider: {
     height: 1,
     backgroundColor: "#D1D5DB",
-    marginVertical: 18,
+    marginVertical: 15,
+    marginHorizontal: 30,
     borderRadius: 1,
   },
 
@@ -643,4 +718,111 @@ const styles = StyleSheet.create({
     backgroundColor: "#F3F4F6",
   },
   modalCancelText: { color: "#374151", fontSize: 14, fontWeight: "800" },
+
+
+  couponModalCard: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 18,
+    padding: 18,
+  },
+  
+  couponModalTitle: {
+    fontSize: 18,
+    fontWeight: "900",
+    color: "#111827",
+    marginBottom: 12,
+  },
+  
+  couponInputRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  
+  couponInputWrap: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    backgroundColor: "#F9FAFB",
+    borderRadius: 14,
+    paddingHorizontal: 12,
+    height: 46,
+  },
+  
+  couponInput: {
+    flex: 1,
+    fontSize: 14,
+    color: "#111827",
+    paddingVertical: 0, // Android에서 높이 튀는 것 방지
+  },
+  
+  couponAddBtn: {
+    height: 46,
+    paddingHorizontal: 16,
+    borderRadius: 14,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: ORANGE,
+  },
+  
+  couponAddBtnText: {
+    color: "#FFFFFF",
+    fontSize: 14,
+    fontWeight: "900",
+  },
+  
+  couponEmptyWrap: {
+    marginTop: 18,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    backgroundColor: "#FFF7ED",
+    paddingVertical: 18,
+    paddingHorizontal: 14,
+    alignItems: "center",
+    gap: 8,
+  },
+  
+  couponSticker: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: "#FFFFFF",
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: "#FED7AA",
+  },
+  
+  couponEmptyTitle: {
+    fontSize: 15,
+    fontWeight: "900",
+    color: "#111827",
+  },
+  
+  couponEmptyDesc: {
+    fontSize: 13,
+    color: "#6B7280",
+    textAlign: "center",
+    lineHeight: 18,
+  },
+  
+  couponCloseBtn: {
+    marginTop: 12,
+    borderRadius: 14,
+    paddingVertical: 12,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#F3F4F6",
+  },
+  
+  couponCloseText: {
+    color: "#374151",
+    fontSize: 14,
+    fontWeight: "800",
+  },
+  
 });

@@ -4,6 +4,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { updateMe, changePassword } from "../app/lib/auth";
 import { API_BASE } from "../constants/api";
 import { getToken } from "../app/lib/auth";
+import * as ImagePicker from "expo-image-picker";
 
 
 import {
@@ -146,10 +147,35 @@ export default function Profile({ profileData, onBack, onSave }: ProfileEditProp
     }
   };
 
-  const handleImageChange = () => {
-    Alert.alert("프로필 사진", "프로필 사진 변경 기능입니다.");
-    // TODO: expo-image-picker 등으로 실제 이미지 선택 후 setProfileImage(uri)
+  const handleImageChange = async () => {
+    try {
+      // 권한 요청 (갤러리)
+      const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!perm.granted) {
+        Alert.alert("권한 필요", "갤러리 접근 권한을 허용해주세요.");
+        return;
+      }
+  
+      // 갤러리 열기
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,      // 크롭 UI
+        aspect: [1, 1],           // 정사각 크롭
+        quality: 0.8,
+      });
+  
+      if (result.canceled) return;
+  
+      const uri = result.assets?.[0]?.uri;
+      if (!uri) return;
+  
+      // ✅ RN Image는 { uri } 형태도 Source로 가능
+      setProfileImage({ uri });
+    } catch (e: any) {
+      Alert.alert("오류", e?.message ?? "이미지 선택 중 오류가 발생했습니다.");
+    }
   };
+  
 
   return (
     <SafeAreaView style={styles.safe}>
