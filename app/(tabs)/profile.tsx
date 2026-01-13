@@ -20,6 +20,9 @@ import { useAuthStore } from "../../stores/auth";
 import { getToken, clearToken } from "../lib/auth";
 import { useFocusEffect } from "@react-navigation/native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { getPaymentMethod, setPaymentMethod, type PaymentMethod } from "../lib/paymentMethod";
+import { useFavoriteStore } from "../../stores/favorite";
+
 
 // ✅ 여기만 "너 프로젝트에 맞는 경로"로 맞춰줘!
 // 보통: ../../constants/api 또는 ../../../constants/api
@@ -57,6 +60,18 @@ export default function ProfileScreen() {
   // ✅ 쿠폰 모달
   const [couponModalVisible, setCouponModalVisible] = useState(false);
   const [couponCode, setCouponCode] = useState("");
+
+  const [paymentMethod, setPaymentMethodState] = useState<PaymentMethod | null>(null);
+  const [paymentModalVisible, setPaymentModalVisible] = useState(false);
+  const [cardLabelInput, setCardLabelInput] = useState("");
+  const [cardNumberInput, setCardNumberInput] = useState("");
+
+  // ✅ 찜 모달
+  const [favoriteModalVisible, setFavoriteModalVisible] = useState(false);
+
+  // ✅ 찜 목록 (zustand)
+  const favorites = useFavoriteStore((s) => s.favorites);
+
 
 
   // ✅ authStore 기반으로 우선 표시
@@ -116,11 +131,17 @@ export default function ProfileScreen() {
     }
   }, []);
 
+  const loadPaymentMethod = useCallback(async () => {
+    const method = await getPaymentMethod();
+    setPaymentMethodState(method);
+  }, []);
+
   // ✅ 마이페이지가 다시 보일 때마다 갱신
   useFocusEffect(
     useCallback(() => {
       fetchMe();
-    }, [fetchMe])
+      loadPaymentMethod();
+    }, [fetchMe, loadPaymentMethod])
   );
 
   // ✅ 주소 저장 (대표주소 1개)
@@ -145,6 +166,7 @@ export default function ProfileScreen() {
 
     return json as MeResponse;
   };
+
 
   // ✅ 주소 삭제 (서버에 null 저장)
   const deleteAddressOnServer = async () => {
@@ -230,7 +252,7 @@ export default function ProfileScreen() {
             <OrangeIconButton
               label="찜"
               iconName="heart-outline"
-              onPress={() => Alert.alert("TODO", "찜")}
+              onPress={() => setFavoriteModalVisible(true)}
             />
             <OrangeIconButton
               label="나의 리뷰"
@@ -307,6 +329,83 @@ export default function ProfileScreen() {
 </Modal>
 
 
+{/* ✅ 찜 모달 */}
+<Modal
+  visible={favoriteModalVisible}
+  transparent
+  animationType="fade"
+  onRequestClose={() => setFavoriteModalVisible(false)}
+>
+  <View style={styles.modalBackdrop}>
+    <View style={styles.couponModalCard}>
+      <Text style={styles.couponModalTitle}>찜한 가게</Text>
+
+      {favorites.length === 0 ? (
+        <View style={styles.couponEmptyWrap}>
+          <View style={styles.couponSticker}>
+            <Ionicons name="heart" size={22} color="#EF4444" />
+          </View>
+
+          <Text style={styles.couponEmptyTitle}>찜한 가게가 없어요</Text>
+          <Text style={styles.couponEmptyDesc}>
+            메뉴 화면에서 하트를 누르면{"\n"}여기에 모아볼 수 있어요.
+          </Text>
+        </View>
+      ) : (
+        <View style={{ marginTop: 8, gap: 10 }}>
+          {favorites.map((r) => (
+            <Pressable
+              key={r.id}
+              onPress={() => {
+                setFavoriteModalVisible(false);
+                router.push({
+                  pathname: "/menu",
+                  params: {
+                    rid: String(r.id),
+                    name: r.name,
+                  },
+                });
+              }}
+              style={({ pressed }) => [
+                {
+                  backgroundColor: "#FFFFFF",
+                  borderRadius: 14,
+                  borderWidth: 1,
+                  borderColor: "#E5E7EB",
+                  paddingVertical: 12,
+                  paddingHorizontal: 12,
+                  flexDirection: "row",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                },
+                pressed && styles.pressed,
+              ]}
+            >
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+                <Ionicons name="heart" size={18} color="#EF4444" />
+                <Text style={{ fontSize: 15, fontWeight: "900", color: "#111827" }}>
+                  {r.name}
+                </Text>
+              </View>
+
+              <Ionicons name="chevron-forward" size={18} color="#9CA3AF" />
+            </Pressable>
+          ))}
+        </View>
+      )}
+
+      <Pressable
+        style={({ pressed }) => [styles.couponCloseBtn, pressed && styles.pressed]}
+        onPress={() => setFavoriteModalVisible(false)}
+      >
+        <Text style={styles.couponCloseText}>닫기</Text>
+      </Pressable>
+    </View>
+  </View>
+</Modal>
+
+
+
       {/* 카드 리스트 영역 */}
       <View style={styles.listWrap}>
         {/* ✅ 주문 정보 */}
@@ -320,8 +419,17 @@ export default function ProfileScreen() {
           <MenuRow
             title="결제수단"
             rightIcon="add-outline"
-            onPress={() => Alert.alert("TODO", "결제수단")}
+            onPress={() => {
+              setCardLabelInput(paymentMethod?.label ?? "");
+              setCardNumberInput("");
+              setPaymentModalVisible(true);
+            }}
           />
+          {paymentMethod ? (
+            <Text style={styles.paymentCaption}>
+              {paymentMethod.label} · •••• {paymentMethod.last4}
+            </Text>
+          ) : null}
         </CardSection>
 
         {/* ✅ 주소 정보 */}
@@ -410,6 +518,66 @@ export default function ProfileScreen() {
           <Text style={styles.logoutText}>로그아웃</Text>
         </Pressable>
       </View>
+
+      {/* ✅ 결제수단 추가/수정 모달 */}
+      <Modal
+        visible={paymentModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setPaymentModalVisible(false)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>결제수단 등록</Text>
+
+            <TextInput
+              placeholder="카드 별칭 (예: 우리카드)"
+              placeholderTextColor="#9CA3AF"
+              value={cardLabelInput}
+              onChangeText={setCardLabelInput}
+              style={styles.modalInput}
+            />
+
+            <TextInput
+              placeholder="카드번호 (숫자만)"
+              placeholderTextColor="#9CA3AF"
+              value={cardNumberInput}
+              onChangeText={setCardNumberInput}
+              keyboardType="number-pad"
+              style={styles.modalInput}
+            />
+
+            <View style={styles.modalActions}>
+              <Pressable
+                onPress={() => setPaymentModalVisible(false)}
+                style={({ pressed }) => [styles.modalBtn, pressed && styles.pressed]}
+              >
+                <Text style={styles.modalBtnText}>취소</Text>
+              </Pressable>
+
+              <Pressable
+                onPress={async () => {
+                  const digits = cardNumberInput.replace(/\D/g, "");
+                  if (digits.length < 4) {
+                    Alert.alert("안내", "카드번호 뒤 4자리를 입력해주세요.");
+                    return;
+                  }
+
+                  const label = cardLabelInput.trim() || "카드";
+                  const last4 = digits.slice(-4);
+
+                  await setPaymentMethod({ label, last4 });
+                  setPaymentMethodState({ label, last4 });
+                  setPaymentModalVisible(false);
+                }}
+                style={({ pressed }) => [styles.modalBtnPrimary, pressed && styles.pressed]}
+              >
+                <Text style={styles.modalBtnPrimaryText}>저장</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       {/* ✅ 주소 추가/수정 모달 */}
       <Modal
@@ -619,6 +787,13 @@ const styles = StyleSheet.create({
     borderRadius: 10,
   },
   menuTitle: { fontSize: 15, fontWeight: "600", color: "#1F2937" },
+  paymentCaption: {
+    marginTop: 6,
+    paddingLeft: 6,
+    fontSize: 12,
+    color: "#6B7280",
+    fontWeight: "700",
+  },
 
   logoutWrap: { paddingHorizontal: 24, marginTop: 24 },
   logoutBtn: {
@@ -700,6 +875,29 @@ const styles = StyleSheet.create({
     backgroundColor: "#F9FAFB",
     marginBottom: 12,
   },
+  modalActions: {
+    flexDirection: "row",
+    gap: 10,
+    marginTop: 4,
+  },
+  modalBtn: {
+    flex: 1,
+    borderRadius: 12,
+    paddingVertical: 12,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#F3F4F6",
+  },
+  modalBtnText: { color: "#374151", fontSize: 14, fontWeight: "800" },
+  modalBtnPrimary: {
+    flex: 1,
+    borderRadius: 12,
+    paddingVertical: 12,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: ORANGE,
+  },
+  modalBtnPrimaryText: { color: "#FFFFFF", fontSize: 14, fontWeight: "900" },
   modalSubmitBtn: {
     backgroundColor: ORANGE,
     borderRadius: 14,

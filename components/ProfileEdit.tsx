@@ -71,7 +71,6 @@ export default function Profile({ profileData, onBack, onSave }: ProfileEditProp
     }
   };
   
-
   const handleVerifyCurrentPassword = async () => {
     if (!currentPassword) {
       Alert.alert("안내", "현재 비밀번호를 입력해주세요.");

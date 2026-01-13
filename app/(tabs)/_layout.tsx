@@ -1,13 +1,20 @@
 import { Tabs } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
+import { useEffect } from "react";
+import { useFavoriteStore } from "../../stores/favorite";
 
 export default function TabsLayout() {
+  const loadFavorites = useFavoriteStore((s) => s.loadFavorites);
+
+  useEffect(() => {
+    loadFavorites();
+  }, [loadFavorites]);
+
   return (
-    
     <Tabs
       screenOptions={{
         headerShown: false,
-        tabBarActiveTintColor: "#f57c00", 
+        tabBarActiveTintColor: "#f57c00",
         tabBarInactiveTintColor: "#9ca3af",
       }}
     >
@@ -42,10 +49,7 @@ export default function TabsLayout() {
       />
 
       {/* 숨길 탭 */}
-      <Tabs.Screen
-        name="explore"
-        options={{ href: null }}
-      />
+      <Tabs.Screen name="explore" options={{ href: null }} />
     </Tabs>
   );
 }

@@ -23,13 +23,12 @@ import { router, useLocalSearchParams } from "expo-router";
 import { API_BASE } from "../../constants/api"; // ✅ menu.tsx랑 동일 경로
 import { useCartStore } from "../../stores/cart";
 import {
-  appendOrderHistory,
-  clearOrderCompletionInitiated,
   formatOrderDate,
-  markOrderCompletionInitiated,
   resolveOrderUserKey,
   type OrderHistoryEntry,
 } from "../lib/orderHistory";
+import { getPaymentMethod } from "../lib/paymentMethod";
+import { setPendingOrder } from "../lib/pendingOrder";
 
 type ApiMenu = {
   id: number;
@@ -140,25 +139,6 @@ export default function OrderCartScreen() {
       fetchMyAddress();
     }, [fetchMyAddress])
   );
-
-  const completeOrderOnServer = async () => {
-    const res = await fetch(`${API_BASE}/restaurants/${restaurantId}/complete`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-    });
-  
-    if (!res.ok) {
-      const text = await res.text().catch(() => "");
-      throw new Error(`complete failed: ${res.status} ${text}`);
-    }
-  
-    const st = (await res.json().catch(() => null)) as RestaurantState | null;
-  
-    // 서버가 0으로 리셋해줬을 테니 UI도 즉시 반영
-    setPendingPrice(st?.pendingPrice ?? 0);
-    setItems([]);
-  };
-  
 
   // ----------------------------
   // 데이터 fetch
@@ -466,39 +446,33 @@ export default function OrderCartScreen() {
           text: "주문하기",
           onPress: async () => {
             try {
-              const userKey = await resolveOrderUserKey();
-              await markOrderCompletionInitiated(userKey, restaurantId);
-
-              const orderEntry = buildOrderHistoryEntry(userKey);
-              await completeOrderOnServer();
-
-              if (orderEntry) {
-                try {
-                  await appendOrderHistory(userKey, orderEntry);
-                } catch {}
+              const method = await getPaymentMethod();
+              if (!method) {
+                Alert.alert(
+                  "결제수단 필요",
+                  "마이페이지에서 결제수단을 먼저 등록해주세요."
+                );
+                return;
               }
 
-              Alert.alert("주문 완료", "주문이 완료되어 장바구니가 초기화되었습니다.", [
-                {
-                  text: "확인",
-                  onPress: () => {
-                    // ✅ 메뉴 화면으로 돌아가기 (stack 복잡해도 확실)
-                    router.replace({
-                      pathname: "/menu",
-                      params: {
-                        rid: String(restaurantId),
-                        name: restaurantName,
-                        minOrder: String(minOrderPrice || 0),
-                      },
-                    });
-                  },
-                },
-              ]);
+              const userKey = await resolveOrderUserKey();
+              const orderEntry = buildOrderHistoryEntry(userKey);
+              if (!orderEntry) {
+                Alert.alert("오류", "주문할 메뉴가 없습니다.");
+                return;
+              }
+
+              await setPendingOrder({
+                userKey,
+                restaurantId,
+                restaurantName,
+                minOrderPrice: minOrderPrice || 0,
+                orderEntry,
+                createdAt: Date.now(),
+              });
+
+              router.push("/payment");
             } catch (e: any) {
-              try {
-                const userKey = await resolveOrderUserKey();
-                await clearOrderCompletionInitiated(userKey, restaurantId);
-              } catch {}
               Alert.alert("오류", e?.message ?? "주문 실패");
             }
           },

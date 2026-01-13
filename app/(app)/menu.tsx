@@ -18,9 +18,12 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
-import { useCartStore } from "../../stores/cart";
-import { API_BASE } from "../../constants/api";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+
+import { useCartStore } from "../../stores/cart";
+import { useFavoriteStore } from "../../stores/favorite";
+import { API_BASE } from "../../constants/api";
+
 import {
   appendOrderHistory,
   consumeOrderCompletionInitiated,
@@ -54,13 +57,12 @@ const FALLBACK_RESTAURANT_NAME = "메뉴";
 const FALLBACK_MIN_ORDER = 20000;
 
 const MENU_IMAGES_BY_KEY: Record<string, any> = {
-  //모수
+  // 모수
   "1:영길불에 태운 도토리 국수": require("../../assets/images/dotori.png"),
   "1:작은 한입들": require("../../assets/images/small.png"),
   "1:우엉 타르트": require("../../assets/images/ung.png"),
 
-
-  //페페스
+  // 페페스
   "2:봉골레": require("../../assets/images/bongole.png"),
   "2:까르보나라": require("../../assets/images/carbonara.png"),
   "2:라구": require("../../assets/images/lagu.png"),
@@ -81,11 +83,9 @@ const MENU_IMAGES_BY_KEY: Record<string, any> = {
   "2:하이네켄": require("../../assets/images/drink.png"),
   "2:레드와인": require("../../assets/images/drink.png"),
   "2:화이트와인": require("../../assets/images/drink.png"),
-
 };
 
 const FALLBACK_LOCAL_IMAGE = require("../../assets/images/dotori.png");
-
 
 // ✅ selector에서 쓰는 "안정적인" 빈 객체 (레퍼런스 고정)
 const EMPTY_COUNTS: Record<string, number> = Object.freeze({});
@@ -175,6 +175,17 @@ export default function BurgerMenuScreen() {
     lastPendingPriceRef.current = null;
   }, [restaurantId]);
 
+  // ----------------------------
+  // ✅ 찜(하트)
+  // ----------------------------
+  const isFav = useFavoriteStore((s) => s.isFavorite);
+
+  const liked = useFavoriteStore((s) =>
+  s.favorites.some((f) => f.id === restaurantId)
+);
+const toggleFav = useFavoriteStore((s) => s.toggleFavorite);
+
+
   const serializeImageSource = (
     image: ImageSourcePropType | undefined
   ): string | number | undefined => {
@@ -254,23 +265,18 @@ export default function BurgerMenuScreen() {
       const data: ApiMenu[] = await res.json();
 
       const mapped: MenuItem[] = data.map((m) => {
-        const idStr = String(m.id);
+        const key = `${restaurantId}:${m.name}`;
+        console.log("menu name from DB =", m.name);
+        console.log("image key =", key);
 
-      const key = `${restaurantId}:${m.name}`;
-
-      console.log("menu name from DB =", m.name);
-      console.log("image key =", key);
-
-      
         return {
-          id: idStr,
+          id: String(m.id),
           name: m.name,
           description: "",
           price: m.price,
           image: MENU_IMAGES_BY_KEY[key] ?? FALLBACK_LOCAL_IMAGE,
         };
       });
-      
 
       if (!cancelled) setMenuItems(mapped);
     })()
@@ -318,10 +324,7 @@ export default function BurgerMenuScreen() {
         if (shouldCheckCompletion) {
           const key = userKeyRef.current || "guest";
           try {
-            const skip = await consumeOrderCompletionInitiated(
-              key,
-              restaurantId
-            );
+            const skip = await consumeOrderCompletionInitiated(key, restaurantId);
             if (!skip) {
               const entry = buildLocalOrderEntry();
               if (entry) {
@@ -359,14 +362,14 @@ export default function BurgerMenuScreen() {
 
     return menuItems.filter(
       (m) =>
-        m.name.toLowerCase().includes(q) || m.description.toLowerCase().includes(q)
+        m.name.toLowerCase().includes(q) ||
+        m.description.toLowerCase().includes(q)
     );
   }, [query, menuItems]);
 
   const cartCount = useMemo(() => {
     return Object.values(quantities).reduce((acc, v) => acc + v, 0);
   }, [quantities]);
-  
 
   const goBackToMap = useCallback(() => {
     router.replace({
@@ -412,7 +415,7 @@ export default function BurgerMenuScreen() {
     return st;
   };
 
-  // ✅ DB의 Menu.amountOrdered(공동 수량)도 같이 업데이트해야 “DB 수량이 안 바뀜” 해결됨
+  // ✅ DB의 Menu.amountOrdered(공동 수량) 업데이트
   const patchMenuAmountOrdered = async (menuIdStr: string, delta: number) => {
     const menuId = Number(menuIdStr);
     if (!Number.isFinite(menuId)) throw new Error("Invalid menuId");
@@ -432,70 +435,59 @@ export default function BurgerMenuScreen() {
     }
   };
 
+  // ✅ 최소주문 도달 시: 안내만 띄우기
+  const completeOrderIfNeeded = (nextTotal: number) => {
+    if (orderingLockedRef.current) return;
+    if (!selfTriggeredRef.current) return; // 내가 + 눌렀을 때만
+    if (nextTotal < minOrderAmount) return;
 
-  // ✅ 최소주문 도달 시: 주문 접수(리셋) 하지 말고 "안내"만 띄우기
-const completeOrderIfNeeded = (nextTotal: number) => {
-  if (orderingLockedRef.current) return;
-  if (!selfTriggeredRef.current) return; // 내가 + 눌렀을 때만
-  if (nextTotal < minOrderAmount) return;
+    orderingLockedRef.current = true;
+    setOrderingLocked(true);
 
-  orderingLockedRef.current = true;
-  setOrderingLocked(true);
-
-  Alert.alert(
-    "최소주문금액 달성!",
-    `총 ${nextTotal.toLocaleString()}원이 담겼어요.\n장바구니에서 주문을 완료해 주세요.`,
-    [
-      {
-        text: "장바구니 보기",
-        onPress: () => {
-          router.push({
-            pathname: "/order_cart", // ✅ 너가 만든 장바구니 화면 경로에 맞춰
-            params: { rid: String(restaurantId), name: restaurantName },
-          });
-          // ✅ 다음에 또 알림 뜰 수 있게 해제
-          orderingLockedRef.current = false;
-          setOrderingLocked(false);
-          selfTriggeredRef.current = false;
+    Alert.alert(
+      "최소주문금액 달성!",
+      `총 ${nextTotal.toLocaleString()}원이 담겼어요.\n장바구니에서 주문을 완료해 주세요.`,
+      [
+        {
+          text: "장바구니 보기",
+          onPress: () => {
+            router.push({
+              pathname: "/order_cart",
+              params: { rid: String(restaurantId), name: restaurantName },
+            });
+            orderingLockedRef.current = false;
+            setOrderingLocked(false);
+            selfTriggeredRef.current = false;
+          },
         },
-      },
-      {
-        text: "계속 담기",
-        style: "cancel",
-        onPress: () => {
-          // ✅ 알림만 닫고 계속 담기
-          orderingLockedRef.current = false;
-          setOrderingLocked(false);
-          selfTriggeredRef.current = false;
+        {
+          text: "계속 담기",
+          style: "cancel",
+          onPress: () => {
+            orderingLockedRef.current = false;
+            setOrderingLocked(false);
+            selfTriggeredRef.current = false;
+          },
         },
-      },
-    ]
-  );
-};
-
+      ]
+    );
+  };
 
   // ----------------------------
   // ✅ 버튼 핸들러
   // ----------------------------
 
   const increase = async (item: MenuItem) => {
-    // ✅ “내가 눌렀다” 표시
     selfTriggeredRef.current = true;
-
-    // 1) 내 로컬 qty 즉시 반영(화면용)
     incItem(userKey, restaurantId, item.id);
 
     try {
-      // 2) 서버 공동 금액 업데이트
       const st = await patchPendingPrice(+item.price);
-
-      // 3) 서버 공동 메뉴 수량 업데이트(DB)
       await patchMenuAmountOrdered(item.id, +1);
 
       const nextTotal = Number(st?.pendingPrice ?? total + item.price);
       completeOrderIfNeeded(nextTotal);
     } catch (e: any) {
-      // 실패 시 로컬 롤백
       decItem(userKey, restaurantId, item.id);
       Alert.alert("오류", e?.message ?? "담기 실패(네트워크/서버)");
     }
@@ -505,17 +497,12 @@ const completeOrderIfNeeded = (nextTotal: number) => {
     const qty = quantities[item.id] ?? 0;
     if (qty <= 0) return;
 
-    // 1) 내 로컬 qty 즉시 반영
     decItem(userKey, restaurantId, item.id);
 
     try {
-      // 2) 서버 공동 금액 업데이트
       await patchPendingPrice(-item.price);
-
-      // 3) 서버 공동 메뉴 수량 업데이트(DB)
       await patchMenuAmountOrdered(item.id, -1);
     } catch (e: any) {
-      // 실패 시 로컬 롤백
       incItem(userKey, restaurantId, item.id);
       Alert.alert("오류", e?.message ?? "빼기 실패(네트워크/서버)");
     }
@@ -523,133 +510,177 @@ const completeOrderIfNeeded = (nextTotal: number) => {
 
   return (
     <>
-    <StatusBar translucent backgroundColor="transparent" barStyle="light-content" />
-    <SafeAreaView style={styles.safe}>
-      {/* Header */}
-      <View style={styles.header}>
-        <Pressable onPress={goBackToMap} hitSlop={10} style={styles.backBtn}>
-          <Ionicons name="chevron-back" size={24} color="white" />
-        </Pressable>
+      <StatusBar
+        translucent
+        backgroundColor="transparent"
+        barStyle="light-content"
+      />
+      <SafeAreaView style={styles.safe}>
+        {/* Header */}
+        <View style={styles.header}>
+          <Pressable onPress={goBackToMap} hitSlop={10} style={styles.backBtn}>
+            <Ionicons name="chevron-back" size={24} color="white" />
+          </Pressable>
 
-        <View style={styles.headerTitleWrap}>
-          <Text style={styles.title}>{restaurantName}</Text>
+          <View style={styles.headerTitleWrap}>
+            <Text style={styles.title}>{restaurantName}</Text>
+          </View>
+
+          {/* ✅ 오른쪽: 하트 + 장바구니 */}
+          <View style={{ flexDirection: "row", alignItems: "center" }}>
+          <Pressable
+            onPress={() => toggleFav({ id: restaurantId, name: restaurantName })}
+            hitSlop={12}
+            style={{ padding: 8 }}
+          >
+            <Ionicons
+              name={liked ? "heart" : "heart-outline"}
+              size={22}
+              color={liked ? "#EF4444" : "white"}
+            />
+          </Pressable>
+
+
+            <Pressable
+              onPress={() =>
+                router.push({
+                  pathname: "/order_cart",
+                  params: { rid: String(restaurantId), name: restaurantName },
+                })
+              }
+              hitSlop={10}
+              style={styles.cartWrap}
+            >
+              <Ionicons name="cart-outline" size={22} color="white" />
+              {cartCount > 0 ? (
+                <View style={styles.badge}>
+                  <Text style={styles.badgeText}>{cartCount}</Text>
+                </View>
+              ) : null}
+            </Pressable>
+          </View>
         </View>
 
-        <View style={styles.cartWrap}>
-          <Ionicons name="cart-outline" size={22} color="white" />
-          {cartCount > 0 ? (
-            <View style={styles.badge}>
-              <Text style={styles.badgeText}>{cartCount}</Text>
-            </View>
-          ) : null}
+        {/* Search */}
+        <View style={styles.searchRow}>
+          <Ionicons name="search-outline" size={18} color="#9CA3AF" />
+          <TextInput
+            value={query}
+            onChangeText={setQuery}
+            placeholder="메뉴 검색..."
+            placeholderTextColor="#9CA3AF"
+            style={styles.searchInput}
+          />
+          <Ionicons name="options-outline" size={18} color="#9CA3AF" />
         </View>
-      </View>
 
-      {/* Search */}
-      <View style={styles.searchRow}>
-        <Ionicons name="search-outline" size={18} color="#9CA3AF" />
-        <TextInput
-          value={query}
-          onChangeText={setQuery}
-          placeholder="메뉴 검색..."
-          placeholderTextColor="#9CA3AF"
-          style={styles.searchInput}
-        />
-        <Ionicons name="options-outline" size={18} color="#9CA3AF" />
-      </View>
+        {loading ? (
+          <View style={styles.center}>
+            <ActivityIndicator size="large" />
+            <Text style={{ marginTop: 10, color: "#6B7280" }}>
+              메뉴 불러오는 중...
+            </Text>
+          </View>
+        ) : (
+          <FlatList
+            data={filtered}
+            keyExtractor={(m) => m.id}
+            contentContainerStyle={{
+              padding: 16,
+              gap: 12,
+              paddingBottom: cartCount > 0 ? 120 : 24, // ✅ 하단바 생길 때 공간 확보
+            }}
+            renderItem={({ item }) => {
+              const qty = quantities[item.id] ?? 0;
 
-      {loading ? (
-        <View style={styles.center}>
-          <ActivityIndicator size="large" />
-          <Text style={{ marginTop: 10, color: "#6B7280" }}>메뉴 불러오는 중...</Text>
-        </View>
-      ) : (
-        <FlatList
-          data={filtered}
-          keyExtractor={(m) => m.id}
-          contentContainerStyle={{
-            padding: 16,
-            gap: 12,
-            paddingBottom: cartCount > 0 ? 120 : 24, // ✅ 하단바 생길 때 공간 확보
-          }}
-          renderItem={({ item }) => {
-            const qty = quantities[item.id] ?? 0;
+              return (
+                <View style={styles.card}>
+                  <Image source={item.image} style={styles.thumb} />
+                  <View style={{ flex: 1, padding: 12, gap: 6 }}>
+                    <Text style={styles.itemName}>{item.name}</Text>
+                    <Text style={styles.itemDesc} numberOfLines={2}>
+                      {item.description || "설명 없음"}
+                    </Text>
 
-            return (
-              <View style={styles.card}>
-                <Image source={item.image} style={styles.thumb} />
-                <View style={{ flex: 1, padding: 12, gap: 6 }}>
-                  <Text style={styles.itemName}>{item.name}</Text>
-                  <Text style={styles.itemDesc} numberOfLines={2}>
-                    {item.description || "설명 없음"}
-                  </Text>
+                    <View style={styles.row}>
+                      <Text style={styles.price}>
+                        {item.price.toLocaleString()}원
+                      </Text>
 
-                  <View style={styles.row}>
-                    <Text style={styles.price}>{item.price.toLocaleString()}원</Text>
-
-                    {qty === 0 ? (
-                      <Pressable onPress={() => increase(item)} style={styles.addBtn}>
-                        <Text style={styles.addBtnText}>담기</Text>
-                      </Pressable>
-                    ) : (
-                      <View style={styles.stepper}>
-                        <Pressable onPress={() => decrease(item)} style={styles.stepBtn} hitSlop={8}>
-                          <Text style={styles.stepBtnText}>-</Text>
+                      {qty === 0 ? (
+                        <Pressable
+                          onPress={() => increase(item)}
+                          style={styles.addBtn}
+                        >
+                          <Text style={styles.addBtnText}>담기</Text>
                         </Pressable>
+                      ) : (
+                        <View style={styles.stepper}>
+                          <Pressable
+                            onPress={() => decrease(item)}
+                            style={styles.stepBtn}
+                            hitSlop={8}
+                          >
+                            <Text style={styles.stepBtnText}>-</Text>
+                          </Pressable>
 
-                        <Text style={styles.qtyText}>{qty}</Text>
+                          <Text style={styles.qtyText}>{qty}</Text>
 
-                        <Pressable onPress={() => increase(item)} style={styles.stepBtn} hitSlop={8}>
-                          <Text style={styles.stepBtnText}>+</Text>
-                        </Pressable>
-                      </View>
-                    )}
+                          <Pressable
+                            onPress={() => increase(item)}
+                            style={styles.stepBtn}
+                            hitSlop={8}
+                          >
+                            <Text style={styles.stepBtnText}>+</Text>
+                          </Pressable>
+                        </View>
+                      )}
+                    </View>
                   </View>
                 </View>
+              );
+            }}
+            ListEmptyComponent={
+              <View style={{ padding: 32, alignItems: "center" }}>
+                <Text style={{ color: "#6B7280" }}>
+                  해당 조건의 메뉴가 없어요
+                </Text>
               </View>
-            );
-          }}
-          ListEmptyComponent={
-            <View style={{ padding: 32, alignItems: "center" }}>
-              <Text style={{ color: "#6B7280" }}>해당 조건의 메뉴가 없어요</Text>
+            }
+          />
+        )}
+      </SafeAreaView>
+
+      {cartCount > 0 ? (
+        <View style={styles.bottomBarOuter} pointerEvents="box-none">
+          <View style={styles.bottomBar}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.bottomPrice}>{total.toLocaleString()}원</Text>
+              <Text style={styles.bottomSub}>
+                최소주문 {minOrderAmount.toLocaleString()}원
+              </Text>
             </View>
-          }
-        />
-      )}
-    </SafeAreaView>
-    {cartCount > 0 ? (
-  <View style={styles.bottomBarOuter} pointerEvents="box-none">
-    <View style={styles.bottomBar}>
-      <View style={{ flex: 1 }}>
-        <Text style={styles.bottomPrice}>
-          {total.toLocaleString()}원
-        </Text>
-        <Text style={styles.bottomSub}>
-          최소주문 {minOrderAmount.toLocaleString()}원
-        </Text>
-      </View>
 
-      <Pressable
-        onPress={() => {
-          router.push({
-            pathname: "/order_cart",
-            params: {
-              rid: String(restaurantId),
-              name: restaurantName,
-            },
-          });
-        }}
-        style={styles.bottomCartBtn}
-      >
-        <View style={styles.bottomCountDot}>
-          <Text style={styles.bottomCountText}>{cartCount}</Text>
+            <Pressable
+              onPress={() => {
+                router.push({
+                  pathname: "/order_cart",
+                  params: {
+                    rid: String(restaurantId),
+                    name: restaurantName,
+                  },
+                });
+              }}
+              style={styles.bottomCartBtn}
+            >
+              <View style={styles.bottomCountDot}>
+                <Text style={styles.bottomCountText}>{cartCount}</Text>
+              </View>
+              <Text style={styles.bottomCartBtnText}>장바구니 보기</Text>
+            </Pressable>
+          </View>
         </View>
-        <Text style={styles.bottomCartBtnText}>장바구니 보기</Text>
-      </Pressable>
-    </View>
-  </View>
-) : null}
-
+      ) : null}
     </>
   );
 }
@@ -661,7 +692,7 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "#F6F7F9",
   },
-  
+
   center: { flex: 1, alignItems: "center", justifyContent: "center" },
 
   header: {
@@ -767,7 +798,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingBottom: 14,
   },
-  
+
   bottomBar: {
     backgroundColor: "white",
     borderRadius: 18,
@@ -778,7 +809,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 12,
-  
+
     // 살짝 떠있는 느낌(배민 느낌)
     shadowColor: "#000",
     shadowOpacity: 0.12,
@@ -786,22 +817,22 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 4 },
     elevation: 8,
   },
-  
+
   bottomPrice: {
     fontSize: 22,
     fontWeight: "900",
     color: "#111827",
   },
-  
+
   bottomSub: {
     marginTop: 2,
     fontSize: 12,
     color: "#6B7280",
     fontWeight: "700",
   },
-  
+
   bottomCartBtn: {
-    backgroundColor: "#f57c00", // ✅ 요청한 색
+    backgroundColor: "#f57c00",
     borderRadius: 16,
     paddingHorizontal: 16,
     paddingVertical: 14,
@@ -811,13 +842,13 @@ const styles = StyleSheet.create({
     minWidth: 150,
     justifyContent: "center",
   },
-  
+
   bottomCartBtnText: {
     color: "white",
     fontSize: 14,
     fontWeight: "900",
   },
-  
+
   bottomCountDot: {
     width: 24,
     height: 24,
@@ -826,11 +857,10 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  
+
   bottomCountText: {
     color: "white",
     fontSize: 12,
     fontWeight: "900",
   },
-  
 });
