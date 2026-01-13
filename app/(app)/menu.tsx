@@ -21,8 +21,12 @@ import { router, useLocalSearchParams } from "expo-router";
 import { useCartStore } from "../../stores/cart";
 import { API_BASE } from "../../constants/api";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-
-type Category = "all" | "burger" | "side" | "drink";
+import {
+  appendOrderHistory,
+  consumeOrderCompletionInitiated,
+  formatOrderDate,
+  type OrderHistoryEntry,
+} from "../lib/orderHistory";
 
 type ApiMenu = {
   id: number;
@@ -44,7 +48,6 @@ type MenuItem = {
   description: string;
   price: number;
   image: ImageSourcePropType;
-  category: Category;
 };
 
 const FALLBACK_RESTAURANT_NAME = "메뉴";
@@ -63,6 +66,21 @@ const MENU_IMAGES_BY_KEY: Record<string, any> = {
   "2:라구": require("../../assets/images/lagu.png"),
   "2:앤쵸비 오일": require("../../assets/images/oil.png"),
   "2:카치오 에 페페": require("../../assets/images/pepe.png"),
+  "2:매쉬드 포테이토": require("../../assets/images/mash.png"),
+  "2:바질 크림 뇨끼": require("../../assets/images/ba.png"),
+  "2:루꼴라 샐러드": require("../../assets/images/lu_salad.png"),
+  "2:시저 샐러드": require("../../assets/images/si_salad.png"),
+  "2:화이트 라구": require("../../assets/images/white_lagu.png"),
+  "2:채끝 스테이크": require("../../assets/images/stake.png"),
+  "2:치아바타": require("../../assets/images/bata.png"),
+  "2:콜라": require("../../assets/images/drink.png"),
+  "2:제로콜라": require("../../assets/images/drink.png"),
+  "2:스프라이트": require("../../assets/images/drink.png"),
+  "2:산펠레그리노": require("../../assets/images/drink.png"),
+  "2:담레몬": require("../../assets/images/drink.png"),
+  "2:하이네켄": require("../../assets/images/drink.png"),
+  "2:레드와인": require("../../assets/images/drink.png"),
+  "2:화이트와인": require("../../assets/images/drink.png"),
 
 };
 
@@ -110,7 +128,6 @@ export default function BurgerMenuScreen() {
   );
 
   // --- 화면 상태
-  const [selectedCategory, setSelectedCategory] = useState<Category>("all");
   const [query, setQuery] = useState("");
 
   const [restaurantName, setRestaurantName] = useState<string>(
@@ -133,15 +150,79 @@ export default function BurgerMenuScreen() {
   // “내가 + 눌러서 임계치 넘겼을 때만” 알럿 뜨게 하기 위한 플래그
   const selfTriggeredRef = useRef(false);
 
-  const categories = useMemo(
-    () => [
-      { id: "all" as const, name: "전체" },
-      { id: "burger" as const, name: "버거" },
-      { id: "side" as const, name: "사이드" },
-      { id: "drink" as const, name: "음료" },
-    ],
-    []
-  );
+  const menuItemsRef = useRef<MenuItem[]>([]);
+  useEffect(() => {
+    menuItemsRef.current = menuItems;
+  }, [menuItems]);
+
+  const quantitiesRef = useRef<Record<string, number>>(EMPTY_COUNTS);
+  useEffect(() => {
+    quantitiesRef.current = quantities;
+  }, [quantities]);
+
+  const restaurantNameRef = useRef<string>(restaurantName);
+  useEffect(() => {
+    restaurantNameRef.current = restaurantName;
+  }, [restaurantName]);
+
+  const userKeyRef = useRef<string>(userKey);
+  useEffect(() => {
+    userKeyRef.current = userKey;
+  }, [userKey]);
+
+  const lastPendingPriceRef = useRef<number | null>(null);
+  useEffect(() => {
+    lastPendingPriceRef.current = null;
+  }, [restaurantId]);
+
+  const serializeImageSource = (
+    image: ImageSourcePropType | undefined
+  ): string | number | undefined => {
+    if (!image) return undefined;
+    if (typeof image === "number") return image;
+    if (Array.isArray(image)) return undefined;
+    if (typeof image === "object" && "uri" in image) {
+      const uri = image.uri;
+      return typeof uri === "string" && uri.trim() ? uri : undefined;
+    }
+    if (typeof image === "string" && image.trim()) return image;
+    return undefined;
+  };
+
+  const buildLocalOrderEntry = (): OrderHistoryEntry | null => {
+    const localCounts = quantitiesRef.current ?? EMPTY_COUNTS;
+    const entries = Object.entries(localCounts).filter(([, qty]) => qty > 0);
+    if (entries.length === 0) return null;
+
+    const menuById = new Map(menuItemsRef.current.map((item) => [item.id, item]));
+    const orderItems: string[] = [];
+    let totalPrice = 0;
+    let thumbnail: string | number | undefined;
+
+    for (const [menuId, qty] of entries) {
+      const menu = menuById.get(menuId);
+      if (!menu) continue;
+
+      orderItems.push(qty > 1 ? `${menu.name} x${qty}` : menu.name);
+      totalPrice += menu.price * qty;
+
+      if (!thumbnail) {
+        thumbnail = serializeImageSource(menu.image);
+      }
+    }
+
+    if (orderItems.length === 0) return null;
+
+    return {
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      restaurantName: restaurantNameRef.current,
+      restaurantImage: thumbnail,
+      items: orderItems,
+      totalPrice,
+      orderDate: formatOrderDate(new Date()),
+      status: "delivered",
+    };
+  };
 
   // ✅ params 반영
   useEffect(() => {
@@ -187,7 +268,6 @@ export default function BurgerMenuScreen() {
           description: "",
           price: m.price,
           image: MENU_IMAGES_BY_KEY[key] ?? FALLBACK_LOCAL_IMAGE,
-          category: "all",
         };
       });
       
@@ -226,8 +306,33 @@ export default function BurgerMenuScreen() {
           setMinOrderAmount(st.minOrderPrice);
         }
 
+        const currentPending =
+          typeof st?.pendingPrice === "number" ? st.pendingPrice : null;
+        const prevPending = lastPendingPriceRef.current;
+        if (currentPending !== null) lastPendingPriceRef.current = currentPending;
+
+        // ✅ 누가 주문완료를 했든 서버가 0으로 리셋되면 내 주문내역에 기록
+        const shouldCheckCompletion =
+          currentPending === 0 && (prevPending === null || prevPending > 0);
+
+        if (shouldCheckCompletion) {
+          const key = userKeyRef.current || "guest";
+          try {
+            const skip = await consumeOrderCompletionInitiated(
+              key,
+              restaurantId
+            );
+            if (!skip) {
+              const entry = buildLocalOrderEntry();
+              if (entry) {
+                await appendOrderHistory(key, entry);
+              }
+            }
+          } catch {}
+        }
+
         // ✅ 누가 주문완료를 했든 서버가 0으로 리셋되면 잔상 제거
-        if (st?.pendingPrice === 0) {
+        if (currentPending === 0) {
           resetRestaurantItemsForAllUsers(restaurantId);
           setOrderingLocked(false);
           orderingLockedRef.current = false;
@@ -249,19 +354,14 @@ export default function BurgerMenuScreen() {
   }, [restaurantId, setTotal, resetRestaurantItemsForAllUsers]);
 
   const filtered = useMemo(() => {
-    const byCategory =
-      selectedCategory === "all"
-        ? menuItems
-        : menuItems.filter((m) => m.category === selectedCategory);
-
     const q = query.trim().toLowerCase();
-    if (!q) return byCategory;
+    if (!q) return menuItems;
 
-    return byCategory.filter(
+    return menuItems.filter(
       (m) =>
         m.name.toLowerCase().includes(q) || m.description.toLowerCase().includes(q)
     );
-  }, [selectedCategory, query, menuItems]);
+  }, [query, menuItems]);
 
   const cartCount = useMemo(() => {
     return Object.values(quantities).reduce((acc, v) => acc + v, 0);
@@ -458,36 +558,6 @@ const completeOrderIfNeeded = (nextTotal: number) => {
         <Ionicons name="options-outline" size={18} color="#9CA3AF" />
       </View>
 
-      {/* Category pills */}
-      <View style={styles.categoryWrap}>
-        <FlatList
-          horizontal
-          data={categories}
-          keyExtractor={(c) => c.id}
-          showsHorizontalScrollIndicator={false}
-          style={styles.categoryList}
-          contentContainerStyle={styles.categoryListContent}
-          renderItem={({ item }) => {
-            const active = selectedCategory === item.id;
-            return (
-              <Pressable
-                onPress={() => setSelectedCategory(item.id)}
-                style={[styles.pill, active ? styles.pillActive : styles.pillInactive]}
-              >
-                <Text
-                  style={[
-                    styles.pillText,
-                    active ? styles.pillTextActive : styles.pillTextInactive,
-                  ]}
-                >
-                  {item.name}
-                </Text>
-              </Pressable>
-            );
-          }}
-        />
-      </View>
-
       {loading ? (
         <View style={styles.center}>
           <ActivityIndicator size="large" />
@@ -640,23 +710,6 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   searchInput: { flex: 1, fontSize: 14, color: "#111827" },
-
-  categoryWrap: { paddingBottom: 8 },
-  categoryList: { maxHeight: 48 },
-  categoryListContent: { paddingHorizontal: 16, gap: 8 },
-
-  pill: {
-    height: 40,
-    paddingHorizontal: 14,
-    borderRadius: 12,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  pillActive: { backgroundColor: ORANGE },
-  pillInactive: { backgroundColor: "#F3F4F6" },
-  pillText: { fontSize: 13, fontWeight: "800" },
-  pillTextActive: { color: "white" },
-  pillTextInactive: { color: "#374151" },
 
   card: {
     backgroundColor: "white",

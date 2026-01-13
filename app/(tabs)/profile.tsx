@@ -21,6 +21,10 @@ import { getToken, clearToken } from "../lib/auth";
 import { useFocusEffect } from "@react-navigation/native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
+// ✅ 여기만 "너 프로젝트에 맞는 경로"로 맞춰줘!
+// 보통: ../../constants/api 또는 ../../../constants/api
+import { API_BASE } from "../../constants/api";
+
 type ProfileData = {
   nickname: string;
   profileImage: ImageSourcePropType;
@@ -44,7 +48,7 @@ export default function ProfileScreen() {
 
   const [showEditProfile, setShowEditProfile] = useState(false);
 
-  // 대표주소 1개만 관리(요청사항)
+  // 대표주소 1개만 관리
   const [addresses, setAddresses] = useState<string[]>([]);
   const [addressModalVisible, setAddressModalVisible] = useState(false);
   const [addressInput, setAddressInput] = useState("");
@@ -73,7 +77,10 @@ export default function ProfileScreen() {
       const token = await getToken();
       if (!token) return;
 
-      const res = await fetch("http://10.0.2.2:4000/user/me", {
+      const url = `${API_BASE}/user/me`;
+      // console.log("PROFILE FETCH URL =", url);
+
+      const res = await fetch(url, {
         headers: { Authorization: `Bearer ${token}` },
       });
 
@@ -84,7 +91,6 @@ export default function ProfileScreen() {
       }
 
       const me = json as MeResponse;
-      // console.log("ME =", me);
 
       setProfileData((prev) => ({
         ...prev,
@@ -93,20 +99,19 @@ export default function ProfileScreen() {
       }));
 
       const addr = typeof me.address === "string" ? me.address.trim() : "";
-if (addr) {
-  setAddresses([addr]);
-  await AsyncStorage.setItem(ADDRESS_CACHE_KEY, addr);
-} else {
-  setAddresses([]);
-  await AsyncStorage.removeItem(ADDRESS_CACHE_KEY);
-}
-
+      if (addr) {
+        setAddresses([addr]);
+        await AsyncStorage.setItem(ADDRESS_CACHE_KEY, addr);
+      } else {
+        setAddresses([]);
+        await AsyncStorage.removeItem(ADDRESS_CACHE_KEY);
+      }
     } catch (e) {
       console.log("❌ 프로필 불러오기 실패:", e);
     }
   }, []);
 
-  // ✅ 마이페이지가 "다시 보일 때마다" 주소/프로필 다시 로드 (장바구니 갔다가 돌아와도 유지)
+  // ✅ 마이페이지가 다시 보일 때마다 갱신
   useFocusEffect(
     useCallback(() => {
       fetchMe();
@@ -116,10 +121,12 @@ if (addr) {
   // ✅ 주소 저장 (대표주소 1개)
   const saveAddressToServer = async (addr: string) => {
     const token = await getToken();
-    // console.log("TOKEN =", token);
     if (!token) throw new Error("로그인이 필요합니다.");
 
-    const res = await fetch("http://10.0.2.2:4000/user/me", {
+    const url = `${API_BASE}/user/me`;
+    // console.log("PROFILE PATCH URL =", url);
+
+    const res = await fetch(url, {
       method: "PATCH",
       headers: {
         "Content-Type": "application/json",
@@ -131,7 +138,23 @@ if (addr) {
     const json = await res.json().catch(() => null);
     if (!res.ok) throw new Error(json?.message ?? "주소 저장 실패");
 
-    return json as MeResponse; // updated user
+    return json as MeResponse;
+  };
+
+  // ✅ 주소 삭제 (서버에 null 저장)
+  const deleteAddressOnServer = async () => {
+    const token = await getToken();
+    if (!token) return;
+
+    const url = `${API_BASE}/user/me`;
+    await fetch(url, {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ address: null }),
+    });
   };
 
   const onLogoutPress = () => {
@@ -141,15 +164,10 @@ if (addr) {
         text: "로그아웃",
         style: "destructive",
         onPress: async () => {
-          // 1) auth store 비우기
           doLogout();
-
-          // 2) token 제거
           try {
             await clearToken();
           } catch {}
-
-          // 3) 로그인 화면
           router.replace("/login");
         },
       },
@@ -279,19 +297,8 @@ if (addr) {
                             text: "삭제",
                             style: "destructive",
                             onPress: async () => {
-                              // ✅ 대표주소 1개만 관리: 서버에도 null로 저장
                               try {
-                                const token = await getToken();
-                                if (token) {
-                                  await fetch("http://10.0.2.2:4000/user/me", {
-                                    method: "PATCH",
-                                    headers: {
-                                      "Content-Type": "application/json",
-                                      Authorization: `Bearer ${token}`,
-                                    },
-                                    body: JSON.stringify({ address: null }),
-                                  });
-                                }
+                                await deleteAddressOnServer();
                               } catch {}
                               setAddresses([]);
                               await AsyncStorage.removeItem(ADDRESS_CACHE_KEY);
@@ -364,7 +371,9 @@ if (addr) {
                   const updated = await saveAddressToServer(trimmed);
 
                   // ✅ 서버 응답값 기준으로 UI 반영
-                  const addr = typeof updated.address === "string" ? updated.address.trim() : trimmed;
+                  const addr =
+                    typeof updated.address === "string" ? updated.address.trim() : trimmed;
+
                   setAddresses(addr ? [addr] : []);
 
                   if (addr) await AsyncStorage.setItem(ADDRESS_CACHE_KEY, addr);

@@ -21,9 +21,12 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
 import { API_BASE } from "../../constants/api"; // ✅ menu.tsx랑 동일 경로
+import { useCartStore } from "../../stores/cart";
 import {
   appendOrderHistory,
+  clearOrderCompletionInitiated,
   formatOrderDate,
+  markOrderCompletionInitiated,
   resolveOrderUserKey,
   type OrderHistoryEntry,
 } from "../lib/orderHistory";
@@ -60,6 +63,7 @@ type MeResponse = {
 };
 
 const ORANGE = "#f57c00";
+const EMPTY_COUNTS: Record<string, number> = Object.freeze({});
 
 const ADDRESS_CACHE_KEY = "profile_address_cache_v1";
 
@@ -90,6 +94,7 @@ export default function OrderCartScreen() {
   const [pendingPrice, setPendingPrice] = useState<number>(0);
   const [minOrderPrice, setMinOrderPrice] = useState<number>(0);
   const [address, setAddress] = useState<string>("");
+  const itemCountsByUser = useCartStore((s) => s.itemCountsByUser);
 
 
   // 폴링 정지 플래그
@@ -266,21 +271,37 @@ export default function OrderCartScreen() {
     return undefined;
   };
 
-  const buildOrderHistoryEntry = (): OrderHistoryEntry | null => {
-    if (items.length === 0) return null;
+  const buildOrderHistoryEntry = (userKey: string): OrderHistoryEntry | null => {
+    const localCounts =
+      itemCountsByUser?.[userKey]?.[restaurantId] ?? EMPTY_COUNTS;
+    const localEntries = Object.entries(localCounts).filter(([, qty]) => qty > 0);
+    if (localEntries.length === 0) return null;
 
-    const orderItems = items.map((item) =>
-      item.qty > 1 ? `${item.name} x${item.qty}` : item.name
-    );
+    const byId = new Map(items.map((item) => [item.id, item]));
+    const orderItems: string[] = [];
+    let totalPrice = 0;
+    let thumbnail: string | number | undefined;
 
-    const thumbnail = serializeImageSource(items[0]?.image);
+    for (const [menuId, qty] of localEntries) {
+      const item = byId.get(menuId);
+      if (!item) continue;
+
+      orderItems.push(qty > 1 ? `${item.name} x${qty}` : item.name);
+      totalPrice += item.price * qty;
+
+      if (!thumbnail) {
+        thumbnail = serializeImageSource(item.image);
+      }
+    }
+
+    if (orderItems.length === 0) return null;
 
     return {
       id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       restaurantName,
       restaurantImage: thumbnail,
       items: orderItems,
-      totalPrice: finalPay,
+      totalPrice,
       orderDate: formatOrderDate(new Date()),
       status: "delivered",
     };
@@ -445,12 +466,14 @@ export default function OrderCartScreen() {
           text: "주문하기",
           onPress: async () => {
             try {
-              const orderEntry = buildOrderHistoryEntry();
+              const userKey = await resolveOrderUserKey();
+              await markOrderCompletionInitiated(userKey, restaurantId);
+
+              const orderEntry = buildOrderHistoryEntry(userKey);
               await completeOrderOnServer();
 
               if (orderEntry) {
                 try {
-                  const userKey = await resolveOrderUserKey();
                   await appendOrderHistory(userKey, orderEntry);
                 } catch {}
               }
@@ -472,6 +495,10 @@ export default function OrderCartScreen() {
                 },
               ]);
             } catch (e: any) {
+              try {
+                const userKey = await resolveOrderUserKey();
+                await clearOrderCompletionInitiated(userKey, restaurantId);
+              } catch {}
               Alert.alert("오류", e?.message ?? "주문 실패");
             }
           },
