@@ -1,10 +1,9 @@
 import { Router } from "express";
-import { PrismaClient } from "@prisma/client";
 import { requireAuth, AuthedRequest } from "../middlewares/requireAuth";
 import * as bcrypt from "bcrypt";
+import { prisma } from "../db";
 
 const router = Router();
-const prisma = new PrismaClient();
 
 router.get("/me", requireAuth, async (req: AuthedRequest, res) => {
   const me = await prisma.user.findUnique({

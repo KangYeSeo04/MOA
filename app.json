@@ -13,7 +13,8 @@
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/moa_logo.png",
         "backgroundColor": "#f57c00"
-      }
+      },
+      "package": "com.rnasterchef.moa"
     },
     "plugins": [
       [
@@ -24,6 +25,11 @@
           "backgroundColor": "#f57c00"
         }
       ]
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "93e55c93-c28e-47fe-91aa-22f0be6d797c"
+      }
+    }
   }
 }

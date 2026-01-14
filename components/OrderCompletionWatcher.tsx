@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert } from "react-native";
-import { router, usePathname } from "expo-router";
+import { router } from "expo-router";
 
 import { API_BASE } from "../constants/api";
 import { useAuthStore } from "../stores/auth";
@@ -22,7 +22,6 @@ type RestaurantState = {
 };
 
 export function OrderCompletionWatcher() {
-  const pathname = usePathname();
   const token = useAuthStore((s) => s.token);
   const hydrated = useAuthStore((s) => s.hydrated);
 
@@ -110,7 +109,6 @@ export function OrderCompletionWatcher() {
     if (!hydrated || !token) return;
     if (!userKey) return;
     if (trackedRestaurantIds.length === 0) return;
-    if (pathname === "/menu") return;
 
     let dead = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
@@ -208,7 +206,6 @@ export function OrderCompletionWatcher() {
     token,
     userKey,
     trackedRestaurantIds,
-    pathname,
     setTotal,
     setRestaurantMeta,
     resetRestaurantItemsForAllUsers,

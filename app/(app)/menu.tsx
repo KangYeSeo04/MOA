@@ -24,13 +24,6 @@ import { useCartStore } from "../../stores/cart";
 import { useFavoriteStore } from "../../stores/favorite";
 import { API_BASE } from "../../constants/api";
 
-import {
-  appendOrderHistory,
-  consumeOrderCompletionInitiated,
-  formatOrderDate,
-  type OrderHistoryEntry,
-} from "../lib/orderHistory";
-import { setPendingOrder } from "../lib/pendingOrder";
 
 type ApiMenu = {
   id: number;
@@ -153,26 +146,6 @@ export default function BurgerMenuScreen() {
   // “내가 + 눌러서 임계치 넘겼을 때만” 알럿 뜨게 하기 위한 플래그
   const selfTriggeredRef = useRef(false);
 
-  const menuItemsRef = useRef<MenuItem[]>([]);
-  useEffect(() => {
-    menuItemsRef.current = menuItems;
-  }, [menuItems]);
-
-  const quantitiesRef = useRef<Record<string, number>>(EMPTY_COUNTS);
-  useEffect(() => {
-    quantitiesRef.current = quantities;
-  }, [quantities]);
-
-  const restaurantNameRef = useRef<string>(restaurantName);
-  useEffect(() => {
-    restaurantNameRef.current = restaurantName;
-  }, [restaurantName]);
-
-  const userKeyRef = useRef<string>(userKey);
-  useEffect(() => {
-    userKeyRef.current = userKey;
-  }, [userKey]);
-
   const lastPendingPriceRef = useRef<number | null>(null);
   useEffect(() => {
     lastPendingPriceRef.current = null;
@@ -201,41 +174,6 @@ const toggleFav = useFavoriteStore((s) => s.toggleFavorite);
     }
     if (typeof image === "string" && image.trim()) return image;
     return undefined;
-  };
-
-  const buildLocalOrderEntry = (): OrderHistoryEntry | null => {
-    const localCounts = quantitiesRef.current ?? EMPTY_COUNTS;
-    const entries = Object.entries(localCounts).filter(([, qty]) => qty > 0);
-    if (entries.length === 0) return null;
-
-    const menuById = new Map(menuItemsRef.current.map((item) => [item.id, item]));
-    const orderItems: string[] = [];
-    let totalPrice = 0;
-    let thumbnail: string | number | undefined;
-
-    for (const [menuId, qty] of entries) {
-      const menu = menuById.get(menuId);
-      if (!menu) continue;
-
-      orderItems.push(qty > 1 ? `${menu.name} x${qty}` : menu.name);
-      totalPrice += menu.price * qty;
-
-      if (!thumbnail) {
-        thumbnail = serializeImageSource(menu.image);
-      }
-    }
-
-    if (orderItems.length === 0) return null;
-
-    return {
-      id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      restaurantName: restaurantNameRef.current,
-      restaurantImage: thumbnail,
-      items: orderItems,
-      totalPrice,
-      orderDate: formatOrderDate(new Date()),
-      status: "delivered",
-    };
   };
 
   // ✅ params 반영
@@ -338,46 +276,11 @@ const toggleFav = useFavoriteStore((s) => s.toggleFavorite);
         const prevPending = lastPendingPriceRef.current;
         if (currentPending !== null) lastPendingPriceRef.current = currentPending;
 
-        // ✅ 누가 주문완료를 했든 서버가 0으로 리셋되면 내 주문내역에 기록
-        const shouldCheckCompletion =
+        const shouldReset =
           currentPending === 0 && (prevPending === null || prevPending > 0);
 
-        if (shouldCheckCompletion) {
-          const key = userKeyRef.current || "guest";
-          try {
-            const skip = await consumeOrderCompletionInitiated(key, restaurantId);
-            if (!skip) {
-              const entry = buildLocalOrderEntry();
-              if (entry) {
-                await setPendingOrder({
-                  userKey: key,
-                  restaurantId,
-                  restaurantName: restaurantNameRef.current,
-                  minOrderPrice:
-                    typeof st?.minOrderPrice === "number" && st.minOrderPrice > 0
-                      ? st.minOrderPrice
-                      : minOrderAmount,
-                  orderEntry: entry,
-                  createdAt: Date.now(),
-                }).catch(() => {});
-                await appendOrderHistory(key, entry);
-                Alert.alert(
-                  "결제 요청",
-                  "모아친구가 주문을 완료했어요.\n결제페이지에서 확인해 주세요.",
-                  [
-                    {
-                      text: "확인",
-                      onPress: () => router.push("/payment"),
-                    },
-                  ]
-                );
-              }
-            }
-          } catch {}
-        }
-
         // ✅ 누가 주문완료를 했든 서버가 0으로 리셋되면 잔상 제거
-        if (currentPending === 0) {
+        if (shouldReset) {
           resetRestaurantItemsForAllUsers(restaurantId);
           setOrderingLocked(false);
           orderingLockedRef.current = false;
