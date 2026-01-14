@@ -14,6 +14,7 @@ import { API_BASE } from "../../constants/api";
 import {
   appendOrderHistory,
   clearOrderCompletionInitiated,
+  getOrderHistory,
   markOrderCompletionInitiated,
   resolveOrderUserKey,
 } from "../lib/orderHistory";
@@ -87,7 +88,11 @@ export default function PaymentScreen() {
       setSubmitting(true);
       await markOrderCompletionInitiated(order.userKey, order.restaurantId);
       await completeOrderOnServer(order.restaurantId);
-      await appendOrderHistory(order.userKey, order.orderEntry);
+      const history = await getOrderHistory(order.userKey);
+      const exists = history.some((entry) => entry.id === order.orderEntry.id);
+      if (!exists) {
+        await appendOrderHistory(order.userKey, order.orderEntry);
+      }
       await clearPendingOrder();
 
       Alert.alert("결제 완료", "주문이 완료되었습니다.", [

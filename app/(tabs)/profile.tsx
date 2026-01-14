@@ -504,8 +504,24 @@ export default function ProfileScreen() {
 
         {/* ✅ 고객센터 */}
         <CardSection title="고객센터">
-          <MenuRow title="고객센터" onPress={() => Alert.alert("TODO", "고객센터")} />
-          <MenuRow title="주요 문의사항" onPress={() => Alert.alert("TODO", "주요 문의사항")} />
+          <MenuRow
+            title="고객센터"
+            onPress={() =>
+              Alert.alert("고객센터", "010-7642-5299\n010-6488-8283", [
+                { text: "확인" },
+              ])
+            }
+          />
+          <MenuRow
+            title="주요 문의사항"
+            onPress={() =>
+              Alert.alert(
+                "FAQ",
+                "Q. 주문을 취소하고 싶어요.\nA. 결제 완료 전에는 주문서에서 취소할 수 있어요.\n\nQ. 배달이 늦어지고 있어요.\nA. 주문내역에서 배달 진행 상황을 확인해 주세요.\n\nQ. 주소를 변경할 수 있나요?\nA. 주문 전에는 마이페이지에서 주소를 수정할 수 있어요.\n\nQ. 결제수단을 변경하고 싶어요.\nA. 마이페이지에서 결제수단을 등록/수정해 주세요.",
+                [{ text: "확인" }]
+              )
+            }
+          />
         </CardSection>
       </View>
 

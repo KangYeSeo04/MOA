@@ -2,6 +2,7 @@ import React from "react";
 import { Stack } from "expo-router";
 import { Redirect } from "expo-router";
 import { useAuthStore } from "@/stores/auth";
+import { OrderCompletionWatcher } from "../components/OrderCompletionWatcher";
 
 export default function RootLayout() {
   const token = useAuthStore((s) => s.token);
@@ -25,6 +26,7 @@ export default function RootLayout() {
 
   return (
     <>
+      <OrderCompletionWatcher />
       <Stack screenOptions={{ headerShown: false }} />
       <Redirect href="/(tabs)" />
     </>

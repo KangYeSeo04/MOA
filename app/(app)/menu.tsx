@@ -30,6 +30,7 @@ import {
   formatOrderDate,
   type OrderHistoryEntry,
 } from "../lib/orderHistory";
+import { setPendingOrder } from "../lib/pendingOrder";
 
 type ApiMenu = {
   id: number;
@@ -114,6 +115,8 @@ export default function BurgerMenuScreen() {
   // --- store: 공동 금액(서버 pendingPrice)
   const total = useCartStore((s) => s.totals[restaurantId] ?? 0);
   const setTotal = useCartStore((s) => s.setTotal);
+  const setMenuCache = useCartStore((s) => s.setMenuCache);
+  const setRestaurantMeta = useCartStore((s) => s.setRestaurantMeta);
 
   // --- store: 유저별 로컬 수량(내 화면 stepper 표시용)
   const quantities = useCartStore(
@@ -173,7 +176,7 @@ export default function BurgerMenuScreen() {
   const lastPendingPriceRef = useRef<number | null>(null);
   useEffect(() => {
     lastPendingPriceRef.current = null;
-  }, [restaurantId]);
+  }, [restaurantId, setMenuCache]);
 
   // ----------------------------
   // ✅ 찜(하트)
@@ -245,6 +248,13 @@ const toggleFav = useFavoriteStore((s) => s.toggleFavorite);
     );
   }, [name, minOrder, restaurantId]);
 
+  useEffect(() => {
+    setRestaurantMeta(restaurantId, {
+      name: restaurantName,
+      minOrderPrice: minOrderAmount,
+    });
+  }, [restaurantId, restaurantName, minOrderAmount, setRestaurantMeta]);
+
   // ✅ 메뉴 목록 가져오기 (메뉴명/가격)
   useEffect(() => {
     let cancelled = false;
@@ -278,7 +288,18 @@ const toggleFav = useFavoriteStore((s) => s.toggleFavorite);
         };
       });
 
-      if (!cancelled) setMenuItems(mapped);
+      if (!cancelled) {
+        setMenuItems(mapped);
+        setMenuCache(
+          restaurantId,
+          mapped.map((item) => ({
+            id: item.id,
+            name: item.name,
+            price: item.price,
+            image: serializeImageSource(item.image),
+          }))
+        );
+      }
     })()
       .catch((e) => console.error("MENU FETCH ERROR =", e))
       .finally(() => {
@@ -328,6 +349,17 @@ const toggleFav = useFavoriteStore((s) => s.toggleFavorite);
             if (!skip) {
               const entry = buildLocalOrderEntry();
               if (entry) {
+                await setPendingOrder({
+                  userKey: key,
+                  restaurantId,
+                  restaurantName: restaurantNameRef.current,
+                  minOrderPrice:
+                    typeof st?.minOrderPrice === "number" && st.minOrderPrice > 0
+                      ? st.minOrderPrice
+                      : minOrderAmount,
+                  orderEntry: entry,
+                  createdAt: Date.now(),
+                }).catch(() => {});
                 await appendOrderHistory(key, entry);
                 Alert.alert(
                   "결제 요청",

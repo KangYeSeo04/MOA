@@ -8,6 +8,12 @@ type CartState = {
   // ✅ 유저별 수량 (userKey -> restaurantId -> (menuId -> qty))
   itemCountsByUser: Record<string, Record<number, Record<string, number>>>;
 
+  // ✅ 메뉴 캐시 (restaurantId -> menuId -> meta)
+  menuCacheByRestaurant: Record<number, Record<string, MenuCacheItem>>;
+
+  // ✅ 매장 메타 (restaurantId -> meta)
+  restaurantMetaById: Record<number, RestaurantMeta>;
+
   // ✅ 서버 값으로 total 강제 세팅 (polling 결과 반영)
   setTotal: (restaurantId: number, total: number) => void;
 
@@ -21,11 +27,29 @@ type CartState = {
 
   // ✅ 주문 접수(공동) 시 해당 매장의 모든 유저 수량 초기화
   resetRestaurantItemsForAllUsers: (restaurantId: number) => void;
+
+  // ✅ 메뉴/매장 정보 캐시
+  setMenuCache: (restaurantId: number, items: MenuCacheItem[]) => void;
+  setRestaurantMeta: (restaurantId: number, meta: RestaurantMeta) => void;
+};
+
+export type MenuCacheItem = {
+  id: string;
+  name: string;
+  price: number;
+  image?: string | number;
+};
+
+export type RestaurantMeta = {
+  name?: string;
+  minOrderPrice?: number;
 };
 
 export const useCartStore = create<CartState>((set) => ({
   totals: {},
   itemCountsByUser: {},
+  menuCacheByRestaurant: {},
+  restaurantMetaById: {},
 
   setTotal: (restaurantId, total) =>
     set((state) => ({
@@ -114,4 +138,29 @@ export const useCartStore = create<CartState>((set) => ({
 
       return { itemCountsByUser: next };
     }),
+
+  setMenuCache: (restaurantId, items) =>
+    set((state) => {
+      const byId: Record<string, MenuCacheItem> = {};
+      for (const item of items) {
+        byId[item.id] = item;
+      }
+      return {
+        menuCacheByRestaurant: {
+          ...state.menuCacheByRestaurant,
+          [restaurantId]: byId,
+        },
+      };
+    }),
+
+  setRestaurantMeta: (restaurantId, meta) =>
+    set((state) => ({
+      restaurantMetaById: {
+        ...state.restaurantMetaById,
+        [restaurantId]: {
+          ...state.restaurantMetaById[restaurantId],
+          ...meta,
+        },
+      },
+    })),
 }));
