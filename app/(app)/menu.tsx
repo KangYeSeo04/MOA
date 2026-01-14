@@ -329,6 +329,16 @@ const toggleFav = useFavoriteStore((s) => s.toggleFavorite);
               const entry = buildLocalOrderEntry();
               if (entry) {
                 await appendOrderHistory(key, entry);
+                Alert.alert(
+                  "결제 요청",
+                  "모아친구가 주문을 완료했어요.\n결제페이지에서 확인해 주세요.",
+                  [
+                    {
+                      text: "확인",
+                      onPress: () => router.push("/payment"),
+                    },
+                  ]
+                );
               }
             }
           } catch {}

@@ -30,6 +30,14 @@ export default function HomeScreen() {
   // watchPosition 구독 보관
   const locationSubRef = useRef<Location.LocationSubscription | null>(null);
 
+  const applyLocation = useCallback((loc: Location.LocationObject) => {
+    const lat = loc.coords.latitude;
+    const lng = loc.coords.longitude;
+
+    setCenter([lat, lng]);
+    mapRef.current?.moveTo(lat, lng);
+  }, []);
+
   // ✅ menu에서 돌아올 때 받을 파라미터
   const { focusRid } = useLocalSearchParams<{ focusRid?: string }>();
 
@@ -64,31 +72,55 @@ export default function HomeScreen() {
 
   // ✅ 최초 권한 요청 + 현재 위치 1회 반영 (추적 아님)
   useEffect(() => {
-    (async () => {
+    let cancelled = false;
+
+    const loadInitialLocation = async () => {
       try {
         const { status } = await Location.requestForegroundPermissionsAsync();
         if (status !== "granted") {
-          setHasLocation(false);
+          if (!cancelled) setHasLocation(false);
           return;
         }
 
-        setHasLocation(true);
+        const servicesEnabled = await Location.hasServicesEnabledAsync();
+        if (!servicesEnabled) {
+          if (!cancelled) setHasLocation(false);
+          return;
+        }
 
-        const loc = await Location.getCurrentPositionAsync({
-          accuracy: Location.Accuracy.Balanced,
-        });
+        if (!cancelled) setHasLocation(true);
 
-        const lat = loc.coords.latitude;
-        const lng = loc.coords.longitude;
+        try {
+          const loc = await Location.getCurrentPositionAsync({
+            accuracy: Location.Accuracy.Balanced,
+          });
+          if (!cancelled) applyLocation(loc);
+        } catch (e) {
+          const lastKnown = await Location.getLastKnownPositionAsync({
+            maxAge: 1000 * 60 * 5,
+          }).catch(() => null);
 
-        setCenter([lat, lng]);
-        mapRef.current?.moveTo(lat, lng);
+          if (!cancelled && lastKnown) {
+            applyLocation(lastKnown);
+            return;
+          }
+
+          if (!cancelled) console.warn("Location unavailable:", e);
+        }
       } catch (e) {
-        console.error("Location error:", e);
-        setHasLocation(false);
+        if (!cancelled) {
+          console.warn("Location error:", e);
+          setHasLocation(false);
+        }
       }
-    })();
-  }, []);
+    };
+
+    loadInitialLocation();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [applyLocation]);
 
   // ✅ 추적 시작
   const startTracking = useCallback(async () => {
@@ -99,6 +131,12 @@ export default function HomeScreen() {
         status = req.status;
       }
       if (status !== "granted") {
+        setHasLocation(false);
+        return;
+      }
+
+      const servicesEnabled = await Location.hasServicesEnabledAsync();
+      if (!servicesEnabled) {
         setHasLocation(false);
         return;
       }
@@ -115,20 +153,21 @@ export default function HomeScreen() {
           timeInterval: 1500,
           distanceInterval: 3,
         },
-        (loc) => {
-          const lat = loc.coords.latitude;
-          const lng = loc.coords.longitude;
-
-          setCenter([lat, lng]);
-          mapRef.current?.moveTo(lat, lng);
+        (loc) => applyLocation(loc),
+        (error) => {
+          console.warn("watchPosition error:", error);
+          locationSubRef.current?.remove();
+          locationSubRef.current = null;
+          setTracking(false);
+          setHasLocation(false);
         }
       );
 
       setTracking(true);
     } catch (e) {
-      console.error("startTracking error:", e);
+      console.warn("startTracking error:", e);
     }
-  }, []);
+  }, [applyLocation]);
 
   // ✅ 추적 중지
   const stopTracking = useCallback(() => {

@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { View, TextInput, FlatList, Pressable, Text, StyleSheet } from "react-native";
 import { router } from "expo-router";
 import { API_BASE } from "../constants/api";
+import { Ionicons } from "@expo/vector-icons";
 
 type Restaurant = {
   id: number;
@@ -34,19 +35,31 @@ export default function SearchScreen() {
   }, [query]);
 
   return (
+    
     <View style={styles.container}>
-      <TextInput
-        value={query}
-        onChangeText={setQuery}
-        placeholder="식당 검색하기"
-        style={styles.input}
-        autoFocus
-        autoCorrect={false}
-        autoCapitalize="none"
-        keyboardType="default"      // ✅ 한글 포함 일반 키보드
-        textContentType="none"
-        inputMode="text"            // ✅ (지원되는 RN 버전이면) 텍스트 모드
+      <View style={styles.searchRow}>
+        <Pressable
+          onPress={() => router.back()}
+          style={styles.backButton}
+          hitSlop={10}
+        >
+          <Ionicons name="chevron-back" size={24} color="#111827" />
+        </Pressable>
+
+        <TextInput
+          value={query}
+          onChangeText={setQuery}
+          placeholder="식당 검색하기"
+          placeholderTextColor="#6B7280"
+          style={styles.input}
+          autoFocus
+          autoCorrect={false}
+          autoCapitalize="none"
+          keyboardType="default"
+          textContentType="none"
+          inputMode="text"
         />
+      </View>
 
       <FlatList
         data={items}
@@ -82,14 +95,35 @@ export default function SearchScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, paddingTop: 60, paddingHorizontal: 16, backgroundColor: "white" },
+  container: {
+    flex: 1,
+    paddingTop: 60,
+    paddingHorizontal: 16,
+    backgroundColor: "white",
+  },
+
+  /* ✅ 추가 */
+  searchRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginBottom: 12,
+  },
+  backButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
   input: {
+    flex: 1, // ← 버튼 옆에서도 꽉 차게
     backgroundColor: "#F3F4F6",
     borderRadius: 999,
     paddingHorizontal: 16,
     paddingVertical: 12,
     fontSize: 14,
-    marginBottom: 12,
   },
   row: { paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: "#eee" },
   name: { fontSize: 16, color: "#111827" },
